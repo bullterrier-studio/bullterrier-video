@@ -6,6 +6,7 @@ mod common;
 
 mod architecture;
 mod clip;
+mod ffmpeg;
 mod piece;
 mod ports;
 mod profile;

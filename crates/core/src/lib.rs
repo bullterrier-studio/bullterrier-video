@@ -8,6 +8,7 @@
 
 mod clip;
 mod error;
+mod ffmpeg;
 mod piece;
 pub mod ports;
 mod profile;
@@ -18,6 +19,7 @@ mod types;
 
 pub use clip::Clip;
 pub use error::Error;
+pub use ffmpeg::Ffmpeg;
 pub use piece::{FRAMES_AHEAD_PER_WORKER, Piece};
 pub use profile::Profile;
 pub use scaling::scale;
