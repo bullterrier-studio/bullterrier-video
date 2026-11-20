@@ -31,10 +31,12 @@ uv run poe full                      # `check` and the gate proofs: before a tag
 | change a gate | `pyproject.toml` (Python tools, poe tasks), `Cargo.toml` (Rust lints, tool pins); a proof in `tests/tools/` (the template's shared gates all have one; for your own it is recommended) |
 | keep files identical across projects | `docs/shared-files.md` |
 
-**State:** the API is designed (`docs/api.md`, `docs/examples/`) and the ports and video's own types are built (`crates/core/src/ports/`,
-`types.rs`, tested with fakes); nothing else yet. The template's `scale(value, factor)` is still a placeholder in the core, the
-extension, the package and the command `bt-video scale`, until the first feature replaces it; keep the layout, the gates and the tests
-that prove them. No sibling package is a dependency: the core names none, an adapter does.
+**State:** the API is designed (`docs/api.md`, `docs/examples/`) and the first piece runs: the mill (profile, spans, a song in piece time,
+clips with their mappings, the piece and its parallel frame loop, the ffmpeg adapter in the core; `Piece`, `Clip`, `Music`, the audio
+adapter and the bindings in Python). Built surface and what is still planned (tracks, transitions, camera, footage, loops, sheets):
+`docs/api.md`. The template's `scale(value, factor)` is still a placeholder in the core, the extension, the package and the command
+`bt-video scale`: removing it means rewriting the gate proofs that edit its line (`tests/tools/test_rust_gates.py`). No sibling
+package is a dependency: the core names none, an adapter does.
 
 ## Responsibility
 
