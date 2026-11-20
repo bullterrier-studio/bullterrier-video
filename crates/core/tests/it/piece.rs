@@ -14,36 +14,36 @@ use crate::common::fakes::{FakeMusic, FakeSound, FnSignal, number, parameter};
 struct Flat {
     drawn: Arc<AtomicUsize>,
     fail_from: Option<f64>,
+    panic_from: Option<f64>,
     shrink: bool,
 }
 
 impl Flat {
+    fn with(fail_from: Option<f64>, panic_from: Option<f64>, shrink: bool) -> Arc<Self> {
+        Arc::new(Self {
+            drawn: Arc::new(AtomicUsize::new(0)),
+            fail_from,
+            panic_from,
+            shrink,
+        })
+    }
+
     fn new() -> (Arc<Self>, Arc<AtomicUsize>) {
-        let drawn = Arc::new(AtomicUsize::new(0));
-        (
-            Arc::new(Self {
-                drawn: drawn.clone(),
-                fail_from: None,
-                shrink: false,
-            }),
-            drawn,
-        )
+        let picture = Self::with(None, None, false);
+        let drawn = picture.drawn.clone();
+        (picture, drawn)
     }
 
     fn failing_from(level: f64) -> Arc<Self> {
-        Arc::new(Self {
-            drawn: Arc::new(AtomicUsize::new(0)),
-            fail_from: Some(level),
-            shrink: false,
-        })
+        Self::with(Some(level), None, false)
     }
 
     fn too_small() -> Arc<Self> {
-        Arc::new(Self {
-            drawn: Arc::new(AtomicUsize::new(0)),
-            fail_from: None,
-            shrink: true,
-        })
+        Self::with(None, None, true)
+    }
+
+    fn panicking_from(level: f64) -> Arc<Self> {
+        Self::with(None, Some(level), false)
     }
 }
 
@@ -68,6 +68,7 @@ impl Picture for Flat {
             std::hint::black_box(spin);
         }
         self.drawn.fetch_add(1, Ordering::SeqCst);
+        assert!(!self.panic_from.is_some_and(|from| *level >= from), "the picture broke");
         if self.fail_from.is_some_and(|from| *level >= from) {
             return Err(Error::Port {
                 port: "picture",
@@ -424,4 +425,23 @@ fn names_and_songs_are_checked_when_they_are_given() {
         "a second song"
     );
     assert!(piece.clip_named("a").is_ok());
+}
+
+#[test]
+fn a_picture_that_panics_is_an_error_naming_it_and_never_a_hang() {
+    for workers in [1, 2, 4] {
+        let encoder = Collect::default();
+        let result = render(&piece(100.0, Flat::panicking_from(0.5)), &encoder, workers);
+        let Err(Error::Port {
+            port: "picture",
+            message,
+        }) = result
+        else {
+            unreachable!("{workers} workers: {result:?}")
+        };
+        assert!(
+            message.contains("panicked") && message.contains("the picture broke"),
+            "{message}"
+        );
+    }
 }

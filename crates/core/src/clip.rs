@@ -214,13 +214,23 @@ impl Clip {
     }
 }
 
-/// The parameters of `picture`, by address.
+/// The parameters of `picture`, by address. A number's range must be two finite numbers, the first not above the second.
 fn describe(picture: &dyn Picture) -> Result<BTreeMap<String, Kind>, Error> {
-    Ok(picture
-        .parameters()?
-        .into_iter()
-        .map(|Parameter { address, kind, .. }| (address, kind))
-        .collect())
+    let mut described = BTreeMap::new();
+    for Parameter { address, kind, .. } in picture.parameters()? {
+        if let Kind::Number { min, max, .. } = &kind
+            && !(min.is_finite() && max.is_finite() && min <= max)
+        {
+            return Err(Error::Port {
+                port: "picture",
+                message: format!(
+                    "`{address}` has the range {min} to {max}: two finite numbers, the first not above the second"
+                ),
+            });
+        }
+        described.insert(address, kind);
+    }
+    Ok(described)
 }
 
 /// A raw signal value as a value of `kind`: held to the range, wrapped, rounded or thresholded.
@@ -236,12 +246,14 @@ fn drive(kind: &Kind, raw: f64) -> Result<Value, Error> {
             integer,
             ..
         } => {
+            // a whole number rounds first, so that 359.6 of a 0 to 360 turn is 360, which wraps to 0
+            let whole = if *integer { raw.round() } else { raw };
             let held = if *cyclic && max > min {
-                min + (raw - min).rem_euclid(max - min)
+                min + (whole - min).rem_euclid(max - min)
             } else {
-                raw.clamp(*min, *max)
+                whole.clamp(*min, *max)
             };
-            Ok(Value::Number(if *integer { held.round() } else { held }))
+            Ok(Value::Number(held))
         }
         // constant: one half, the middle of a signal's usual zero to one
         Kind::Bool => Ok(Value::Bool(raw >= 0.5)),

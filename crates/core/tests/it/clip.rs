@@ -58,6 +58,11 @@ fn a_cyclic_number_wraps_round_instead() {
         Value::Number(-0.5),
         "a range that does not start at zero"
     );
+    assert_eq!(
+        driven(number(0.0, 360.0, true, true), 359.6),
+        Value::Number(0.0),
+        "a whole angle rounds first, then wraps: 360 is 0"
+    );
 }
 
 #[test]
@@ -323,4 +328,24 @@ proptest! {
         prop_assert_eq!(driven(kind, once), Value::Number(once));
         prop_assert!((-3.0..=7.0).contains(&once));
     }
+}
+
+#[test]
+fn a_picture_whose_range_is_backwards_or_not_a_number_is_refused_when_it_is_described() {
+    for (min, max) in [(1.0, 0.0), (f64::NAN, 1.0), (0.0, f64::NAN), (0.0, f64::INFINITY)] {
+        let picture = Described(vec![parameter("a", number(min, max, false, false))]);
+        let Err(Error::Port {
+            port: "picture",
+            message,
+        }) = Clip::new("c", Arc::new(picture), 0.0, None)
+        else {
+            unreachable!("{min} to {max} accepted")
+        };
+        assert!(message.contains("`a`"), "{message}");
+    }
+    let one_value = Described(vec![parameter("a", number(2.0, 2.0, false, false))]);
+    assert!(
+        Clip::new("c", Arc::new(one_value), 0.0, None).is_ok(),
+        "a range of one value is allowed"
+    );
 }

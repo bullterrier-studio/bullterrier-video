@@ -203,7 +203,7 @@ impl Piece {
                 let (gate, steps) = (&gate, &steps);
                 scope.spawn(move || {
                     while let Some(index) = gate.claim() {
-                        if sender.send((index, self.draw(&steps[index]))).is_err() {
+                        if sender.send((index, self.draw_or_report(&steps[index]))).is_err() {
                             break;
                         }
                     }
@@ -268,6 +268,24 @@ impl Piece {
             }
         }
         Ok(steps)
+    }
+
+    /// [`Piece::draw`], with a picture that panics turned into the error it is: a worker that unwound would leave the others
+    /// waiting for a frame that never comes.
+    fn draw_or_report(&self, step: &Step) -> Result<Frame, Error> {
+        std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| self.draw(step))).unwrap_or_else(|payload| {
+            let said = payload
+                .downcast_ref::<&str>()
+                .map(ToString::to_string)
+                .or_else(|| payload.downcast_ref::<String>().cloned());
+            Err(Error::Port {
+                port: "picture",
+                message: format!(
+                    "the picture panicked: {}",
+                    said.unwrap_or_else(|| "without a message".into())
+                ),
+            })
+        })
     }
 
     /// One frame: the clip's picture with the values, or black where no clip is.

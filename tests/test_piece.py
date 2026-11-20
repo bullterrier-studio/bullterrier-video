@@ -6,6 +6,7 @@ from __future__ import annotations
 
 import stat
 import sys
+import threading
 import types
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any
@@ -364,3 +365,25 @@ def test_a_missing_audio_library_is_a_port_error_that_says_how_to_get_it(monkeyp
     piece, _ = piece_of()
     with pytest.raises(PortError, match="install bullterrier-audio"):
         piece.song(object(), btv.whole())
+
+
+def test_a_slow_picture_in_one_thread_does_not_lock_another_threads_piece_calls():
+    """A piece call waiting for another thread's call must not hold the GIL while it waits: that thread may need it."""
+    entered, release = threading.Event(), threading.Event()
+
+    class Slow(FakeScene):
+        def parameters(self) -> dict[str, Described]:
+            entered.set()
+            release.wait()  # a picture that takes its time, with the GIL free, as a scene's render does
+            return super().parameters()
+
+    piece = btv.Piece(btv.Profile(WIDTH, HEIGHT, 4))
+    adding = threading.Thread(target=lambda: piece.clip("slow", Slow(), end=1.0))
+    adding.start()
+    entered.wait()
+    copying = threading.Thread(target=piece.copy)  # needs what the first thread holds
+    copying.start()
+    release.set()  # only runs if the copying thread is not holding the GIL while it waits
+    adding.join()
+    copying.join()
+    assert piece["slow"].name == "slow"

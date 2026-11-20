@@ -372,3 +372,62 @@ fn a_gif_and_a_png_are_written_with_their_own_arguments_and_no_sound() {
         assert!(!args.iter().any(|a| a == "-c:a" || a == "wav"), "{name} holds no sound");
     }
 }
+
+fn left_in(dir: &Path) -> Vec<String> {
+    let mut names: Vec<String> = fs::read_dir(dir)
+        .unwrap_or_else(|e| unreachable!("{e}"))
+        .filter_map(Result::ok)
+        .map(|e| e.file_name().to_string_lossy().into_owned())
+        .collect();
+    names.sort();
+    names
+}
+
+#[test]
+fn a_job_the_encoder_refuses_leaves_no_soundtrack_file_behind() {
+    let dir = TempDir::new().unwrap_or_else(|e| unreachable!("{e}"));
+    let out = dir.path().join("clip.mp4");
+    let audio = Audio {
+        rate: 8000,
+        channels: 1,
+        samples: &[0.0; 4],
+    };
+    let result = Ffmpeg::new(working(dir.path())).encode(
+        &Job {
+            codec: "vp9",
+            ..job(&out, Some(audio))
+        },
+        &mut vec![frame(2, 2, [0.0; 4])].into_iter(),
+    );
+    assert!(matches!(result, Err(Error::Port { .. })));
+    assert_eq!(left_in(dir.path()), vec!["fake-ffmpeg".to_string()]);
+}
+
+#[test]
+fn a_file_that_cannot_be_moved_into_place_leaves_no_temporary_file_behind() {
+    let dir = TempDir::new().unwrap_or_else(|e| unreachable!("{e}"));
+    let out = dir.path().join("clip.mp4");
+    fs::create_dir(&out).unwrap_or_else(|e| unreachable!("{e}"));
+    fs::write(out.join("inside"), b"x").unwrap_or_else(|e| unreachable!("{e}"));
+    let audio = Audio {
+        rate: 8000,
+        channels: 1,
+        samples: &[0.0; 4],
+    };
+    let result =
+        Ffmpeg::new(working(dir.path())).encode(&job(&out, Some(audio)), &mut vec![frame(2, 2, [0.0; 4])].into_iter());
+    let Err(Error::Port { message, .. }) = result else {
+        unreachable!("accepted")
+    };
+    assert!(message.contains("clip.mp4"), "{message}");
+    assert_eq!(
+        left_in(dir.path()),
+        vec![
+            "args".to_string(),
+            "clip.mp4".to_string(),
+            "fake-ffmpeg".to_string(),
+            "sound".to_string()
+        ],
+        "only the stand-in's own files and the target"
+    );
+}

@@ -13,6 +13,7 @@ use bullterrier_video as core;
 use bullterrier_video::{Band, Ffmpeg, Hit};
 use numpy::{PyArray1, PyArrayMethods};
 use pyo3::prelude::*;
+use pyo3::sync::MutexExt;
 use pyo3::types::PyDict;
 
 use adapters::{PyMusic, PyPicture, PySignal, PySound, value_of};
@@ -272,8 +273,9 @@ impl Music {
 struct Piece(Mutex<core::Piece>);
 
 impl Piece {
-    fn locked(&self) -> MutexGuard<'_, core::Piece> {
-        self.0.lock().unwrap_or_else(PoisonError::into_inner)
+    /// The core piece, waiting for it with the GIL released: the thread that holds it may be calling Python.
+    fn locked<'a>(&'a self, py: Python<'_>) -> MutexGuard<'a, core::Piece> {
+        self.0.lock_py_attached(py).unwrap_or_else(PoisonError::into_inner)
     }
 }
 
@@ -286,28 +288,28 @@ impl Piece {
     }
 
     /// An independent piece that shares the pictures, signals and song.
-    fn copy(&self) -> Self {
-        Self(Mutex::new(self.locked().clone()))
+    fn copy(&self, py: Python<'_>) -> Self {
+        Self(Mutex::new(self.locked(py).clone()))
     }
 
     /// Adds a clip of `picture` (an object with `parameters()`, `with_values(mapping)` and `render(long_side)`).
     #[pyo3(signature = (name, picture, start=0.0, end=None))]
     fn clip(&self, py: Python<'_>, name: &str, picture: Py<PyAny>, start: f64, end: Option<f64>) -> PyResult<()> {
         let picture = Arc::new(PyPicture::new(picture));
-        self.locked()
+        self.locked(py)
             .clip(name, picture, start, end)
             .map_err(|e| raised(py, &e))
     }
 
     /// Fails with the clip names when there is no clip `name`.
     fn check_clip(&self, py: Python<'_>, name: &str) -> PyResult<()> {
-        self.locked().clip_named(name).map(|_| ()).map_err(|e| raised(py, &e))
+        self.locked(py).clip_named(name).map(|_| ()).map_err(|e| raised(py, &e))
     }
 
     /// Drives `address` of clip `clip` with `signal` (an object with `sample(times)`), read `lag` seconds late.
     #[pyo3(signature = (clip, address, signal, lag=0.0))]
     fn map(&self, py: Python<'_>, clip: &str, address: &str, signal: Py<PyAny>, lag: f64) -> PyResult<()> {
-        let mut piece = self.locked();
+        let mut piece = self.locked(py);
         let clip = piece.clip_mut(clip).map_err(|e| raised(py, &e))?;
         clip.map(address, Arc::new(PySignal(signal)), lag)
             .map_err(|e| raised(py, &e))
@@ -319,7 +321,7 @@ impl Piece {
         for (address, value) in values.iter() {
             converted.insert(address.extract()?, value_of(py, &value)?);
         }
-        let mut piece = self.locked();
+        let mut piece = self.locked(py);
         piece
             .clip_mut(clip)
             .map_err(|e| raised(py, &e))?
@@ -329,7 +331,7 @@ impl Piece {
 
     /// Puts another picture in clip `clip`.
     fn swap(&self, py: Python<'_>, clip: &str, picture: Py<PyAny>) -> PyResult<()> {
-        let mut piece = self.locked();
+        let mut piece = self.locked(py);
         piece
             .clip_mut(clip)
             .map_err(|e| raised(py, &e))?
@@ -351,7 +353,7 @@ impl Piece {
         let music = Arc::new(PyMusic::new(music).map_err(|e| raised(py, &e))?);
         let sound = PySound::new(&sound.clone().unbind()).map_err(|e| raised(py, &e))?;
         let song = self
-            .locked()
+            .locked(py)
             .song(music, &sound, &span.0, fade_in, fade_out)
             .map_err(|e| raised(py, &e))?;
         Ok(Music(song))
@@ -359,17 +361,17 @@ impl Piece {
 
     /// How long the piece lasts, in seconds.
     fn duration(&self, py: Python<'_>) -> PyResult<f64> {
-        self.locked().duration().map_err(|e| raised(py, &e))
+        self.locked(py).duration().map_err(|e| raised(py, &e))
     }
 
     /// The number of frames.
     fn frame_count(&self, py: Python<'_>) -> PyResult<usize> {
-        self.locked().frame_count().map_err(|e| raised(py, &e))
+        self.locked(py).frame_count().map_err(|e| raised(py, &e))
     }
 
     /// The frame at `t` seconds, a float32 `(height, width, 4)` array.
     fn frame<'py>(&self, py: Python<'py>, t: f64) -> PyResult<Bound<'py, numpy::PyArray3<f32>>> {
-        let piece = self.locked().clone();
+        let piece = self.locked(py).clone();
         let frame = py.detach(|| piece.frame(t)).map_err(|e| raised(py, &e))?;
         PyArray1::from_slice(py, frame.pixels()).reshape([frame.height(), frame.width(), 4])
     }
@@ -377,7 +379,7 @@ impl Piece {
     /// Renders the piece into `path` on `workers` threads.
     #[expect(clippy::needless_pass_by_value, reason = "PyO3 extracts a path by value")]
     fn render(&self, py: Python<'_>, path: PathBuf, workers: usize) -> PyResult<()> {
-        let piece = self.locked().clone();
+        let piece = self.locked(py).clone();
         py.detach(|| piece.render(&Ffmpeg::discover(), &path, workers))
             .map_err(|e| raised(py, &e))
     }

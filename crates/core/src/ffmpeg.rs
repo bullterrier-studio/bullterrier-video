@@ -85,28 +85,31 @@ impl Encode for Ffmpeg {
             .as_ref()
             .filter(|_| matches!(container, Container::Mp4 | Container::Mov))
             .map(|_| sibling(job.path, "audio.part"));
-        let cleanup = || {
-            let _ = std::fs::remove_file(&part);
-            if let Some(file) = &audio_file {
-                let _ = std::fs::remove_file(file);
-            }
-        };
+        // removed however this returns: a refused job, a failed write, a failed rename (the renamed file is gone from `part`)
+        let _cleanup = Cleanup([Some(part.clone()), audio_file.clone()].into_iter().flatten().collect());
         if let (Some(audio), Some(file)) = (&job.audio, &audio_file) {
             std::fs::write(file, wav(audio))
                 .map_err(|e| port(format!("cannot write the soundtrack to `{}`: {e}", file.display())))?;
         }
         let arguments = arguments(job, container, (width, height), audio_file.as_deref(), &part)?;
-        let result = self.run(&arguments, first, frames);
-        if result.is_ok() {
-            std::fs::rename(&part, job.path).map_err(|e| {
-                port(format!(
-                    "cannot move the finished file to `{}`: {e}",
-                    job.path.display()
-                ))
-            })?;
+        self.run(&arguments, first, frames)?;
+        std::fs::rename(&part, job.path).map_err(|e| {
+            port(format!(
+                "cannot move the finished file to `{}`: {e}",
+                job.path.display()
+            ))
+        })
+    }
+}
+
+/// Files removed when it goes out of scope: the temporary names a write leaves beside its target.
+struct Cleanup(Vec<PathBuf>);
+
+impl Drop for Cleanup {
+    fn drop(&mut self) {
+        for path in &self.0 {
+            let _ = std::fs::remove_file(path);
         }
-        cleanup();
-        result
     }
 }
 
