@@ -26,9 +26,10 @@ if TYPE_CHECKING:
 
 __all__ = ["DEFAULT_WORKERS", "Clip", "Piece"]
 
-# Frames drawn at once. Scene and image already use every core inside one frame, so more workers than a few only overlap
-# the short serial parts of a frame (building its values, handing it to the encoder); measured in BTVID-0003's demo.
-DEFAULT_WORKERS = 2
+# Frames drawn at once. Scene and image already use every core inside one frame, so more workers only overlap the
+# short serial parts of a frame. Measured on the 300-frame mill (720 by 1280): 1 worker 77.6 s and 3.2 GB peak,
+# 2 workers 48.6 s, 4 workers 38.1 s and 4.0 GB peak, the file identical at each.
+DEFAULT_WORKERS = 4
 
 
 class Clip:

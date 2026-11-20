@@ -6,8 +6,12 @@ music clip from footage, a loop, a template run for many posts. A hand-written d
 frame, clamps by hand, adds one shake to twelve layers and needs a shell script for the soundtrack and ffmpeg; the mill here is 23
 lines of choreography.
 
-**What is built:** the ports and video's own types (Rust, `crates/core/src/ports/`, `types.rs`), with fakes in their tests.
-Nothing else yet: the Python surface below is the contract the next batches build. The first piece to run is the mill.
+The examples show the whole designed surface, including what is still planned; the built part is `examples/mill.py`'s calls.
+
+**What is built:** the ports and video's own types; the core (profile, spans, a song in piece time, clips with their mappings, the
+piece and its parallel frame loop, the ffmpeg adapter); the Python package (`Piece`, `Clip`, `Profile`, spans, `Music`, `Levels`,
+the audio adapter) and the mill piece on it. **Planned, not in the signatures yet:** `track`, `fill`, `transition`, `camera`,
+`Footage`, `loop`, `sheet`, `render_all` (marked *planned* below); each arrives with the batch that needs it.
 
 ## Principles
 
@@ -36,20 +40,20 @@ piece.render("mill.mp4")
 
 | Call | Does |
 |---|---|
-| `Piece(profile, *, loop=False)` | an empty piece; `duration` is the soundtrack's span (or the clips' end) |
+| `Piece(profile)` | an empty piece; `duration` is the soundtrack's span (or the clips' end); `loop=` is *planned* |
 | `Piece[name] -> Clip` | the clip of that name, to `set`, `map` or `swap` it |
-| `Piece.clip(name, source, start=0.0, end=None, *, track=0, fill=None) -> Clip` | puts a picture on the timeline; `source` is a Picture (a scene, a drawing, anything with the port's methods) or a `Footage`; `fill={address: value}` sets holes, a `Footage` value giving a new frame each time |
+| `Piece.clip(name, source, start=0.0, end=None) -> Clip` | puts a picture on the timeline (a cut from one clip to the next; overlap is refused); `source` is a scene or anything with the Picture port's methods. *Planned:* `track=`, a `Footage` source, `fill=` |
 | `Piece.song(sound, span, *, fade_in=0.0, fade_out=0.0) -> Music` | cuts the sound to `span`, fades it, puts it under the piece, returns what it knows in the piece's own time; once: a second call is an `InvalidError` (a timing variant builds the piece again) |
-| `Piece.transition(a, b, at, length, kind=Cut())` | from clip `a` to clip `b`, centred on `at`; `kind`: `Cut`, `Dissolve`, `Sweep("light" or "dark", angle=0)` |
-| `Piece.camera(dx=None, dy=None, zoom=None, rotate=None)` | one transform over the finished composition; each a signal (`dx`, `dy` as fractions of the long side, `zoom` one for none, `rotate` degrees). The finished frame is moved once by the Compose port, so no layer is drawn again and scene's cache holds; the price is one resample of the frame |
-| `Piece.render(path, *, workers=None)` | the file; frames in parallel; the container from the extension |
-| `Piece.frame(t, long_side) -> ndarray` | one moment, float32 RGBA |
-| `Piece.sheet(path, at, width)` | a contact sheet of chosen moments, each `width` pixels along its long side, in seconds |
+| *Planned:* `Piece.transition(a, b, at, length, kind=Cut())` | from clip `a` to clip `b`, centred on `at`; `kind`: `Cut`, `Dissolve`, `Sweep("light" or "dark", angle=0)` |
+| *Planned:* `Piece.camera(dx=None, dy=None, zoom=None, rotate=None)` | one transform over the finished composition; each a signal (`dx`, `dy` as fractions of the long side, `zoom` one for none, `rotate` degrees). The finished frame is moved once by the Compose port, so no layer is drawn again and scene's cache holds; the price is one resample of the frame |
+| `Piece.render(path, *, workers=None)` | the file (mp4, mov, gif or png by its extension) through ffmpeg; frames drawn on `workers` threads (`DEFAULT_WORKERS`) and handed over in order, so the file does not depend on the number; written under a temporary name and renamed when ffmpeg succeeded |
+| `Piece.frame(t) -> ndarray` | one moment at the profile's size, float32 RGBA straight alpha |
+| *Planned:* `Piece.sheet(path, at, width)` | a contact sheet of chosen moments, each `width` pixels along its long side, in seconds |
 | `Piece.copy()` | an independent piece sharing the pictures and their caches |
-| `render_all(pieces, folder, *, workers=None)` | one file per entry of a mapping name to piece, sharing one worker budget |
+| *Planned:* `render_all(pieces, folder, *, workers=None)` | one file per entry of a mapping name to piece, sharing one worker budget |
 | `Clip.map(address, signal, *, lag=0.0)` | see "Mapping" |
 | `Clip.set(values)` | constants by address (numbers, text, colours, pictures); the picture's own values until then |
-| `Clip.swap(picture)` | another picture in the clip, mappings kept where its addresses exist |
+| `Clip.swap(picture)` | another picture in the clip; refused, naming the address, if it lacks one that is set or mapped (nothing changes then) |
 
 **Music** (`Piece.song` returns it; every time is in piece seconds, so a clip's `start` can be `m.drop - 1.0`): `duration`, `tempo`
 (beats a minute), `beats`, `downbeats`, `drop`, `kicks`, `snares`, `hats`, `sections` (each `start`, `end`, `label`), `band(name,
@@ -63,11 +67,11 @@ that looks like silence.
 closes on the beat; an unknown meter raises), `whole()`, `between(start, end)`, `loudest(band, length)`.
 
 **Profile:** `Profile.vertical(width, fps)` (9:16, safe area 12 to 80 percent of the height), `.landscape`, `.square`; fields
-`width`, `height`, `fps`, `depth` (8 or 10 bit), `codec`, `loudness` (LUFS, delivery default), `safe`. The scene's own `fit` and
+`width`, `height`, `fps`, `depth` (8 or 10 bit), `codec` (`h264` or `hevc`), `loudness` (LUFS, none by default), `safe`; the sides must be even. The scene's own `fit` and
 `cover` make the crop; video never crops afterward.
 
-**Footage:** `Footage(path, start=0.0)`: a source of frames from `start` seconds into the file, handed to a scene through a
-picture hole. Waits for the decode port.
+**Footage** (*planned*): `Footage(path, start=0.0)`: a source of frames from `start` seconds into the file, handed to a scene
+through a picture hole. Waits for the decode port.
 
 ### Mapping
 
@@ -82,21 +86,21 @@ every frame of the clip.
   mix is an expression.
 - Refused, naming the address: one that the picture does not have (with the nearest names), a text or picture parameter
   (those are `set`), an address mapped twice or both mapped and set.
-- A clip may be drawn outside its own span (a transition needs both pictures); its signals are total, so this is safe.
-- A moment no clip covers is black. Cover the piece (the last clip to `m.duration`); a gap longer than a frame is reported at render.
+- A moment no clip covers is black. Clips follow one another: a clip with no `end` runs to the next clip's start or the piece's end.
+- *Planned:* a clip may be drawn outside its own span (a transition needs both pictures); its signals are total, so this is safe.
 
 ## Soundtrack
 
-One song per piece for now: cut to the span, faded, muxed in step with the frames, normalised to the profile's loudness. A
-looping piece loops the sound on the bar. Mixing several sounds (voice-over, ducking, crossfades) is video's work through the Sound
+One song per piece for now: cut to the span, faded, set to the profile's loudness if it has one, muxed in step with the frames (the
+sound is padded with silence to the picture and both end together). Mixing several sounds (voice-over, ducking, crossfades) is video's work through the Sound
 port and comes after the first pieces.
 
 ## Errors
 
-`BullterrierVideoError` is the base. `InvalidError`: a piece that cannot be rendered (an unknown address, a mapped twice, a
-span outside the song, a loop whose seam differs, naming the first mapping whose ends differ). `PortError`: a library behind a
-port refused or lacks a method, naming the port and the method (`picture: the object has no with_values`). Every message names
-the thing and the fix.
+`BullterrierVideoError` is the base. `InvalidError`: a piece that cannot be rendered (an unknown address, mapped twice, a span
+outside the song, a song with no drop, overlapping clips). `PortError`: a library behind a port refused or lacks a method, naming
+the port and what it said (`picture: AttributeError: ... no attribute 'with_values'`), or ffmpeg's own words when it fails or is
+missing. Every message names the thing and the fix.
 
 ## The ports (Rust, `bullterrier_video::ports`)
 
@@ -107,11 +111,11 @@ name no sibling's type.
 | Port | Promises | First adapter | Needed by |
 |---|---|---|---|
 | `Picture` | `parameters()` and `render(values, long_side)`: **one long-lived instance, rendered with new values each frame**, so its cache is kept | scene | slice 1 |
-| `Compose` | `compose(layers)`: frames, each with a placement (a `View`), opacity, blend and mask, into one frame of the ground's size: tracks, transitions, the camera | scene (its layers take a frame as a picture) | slice 1 (the camera) |
+| `Compose` | `compose(layers)`: frames, each with a placement (a `View`), opacity, blend and mask, into one frame of the ground's size: tracks, transitions, the camera | scene (its layers take a frame as a picture) | the first piece with a transition (*not built*) |
 | `Signal` | `sample(times)`: a value at any time, many times in one call | control | slice 1 |
 | `Music` | duration, beats, downbeats, drops, hits, sections, `band`: times in seconds and levels; an unknown measure is an error, never an empty list | audio | slice 1 |
 | `Sound` | rate, channels, duration, `cut`, `fade`, `samples`: one sound edited at a time | audio | slice 1 |
-| `Encode` | `encode(job, frames)`: a stream of frames and the soundtrack into one file, at a rate, codec and bit depth | ffmpeg | slice 1 |
+| `Encode` | `encode(job, frames)`: a stream of frames and the soundtrack into one file, at a rate, codec and bit depth | ffmpeg, as a separate program | slice 1 |
 | Decode (sketch) | frames of a clip at times, with its audio | ffmpeg | footage |
 | Footage maps (sketch) | a matte and a depth map per frame, steady over time | models | footage analysis |
 
@@ -121,7 +125,7 @@ name no sibling's type.
 |---|---|
 | Picture | `parameters()` (a mapping from address to an item with `kind`, `meaning`, `unit`, `min`, `max`, `cyclic`: scene's `dict[str, Parameter]`), `with_values(mapping)` returning a picture that shares the cache, `render(size)` returning float32 `(h, w, 4)`, straight alpha. A scene is this shape; a caller's own picture implements the three |
 | Signal | `sample(times)` returning an array |
-| Music and Sound | an audio `Sound` (measures and edits are one object in audio; two ports in video, so a replacement may supply either) |
+| Music and Sound | a `bullterrier_audio.Sound` (measures and edits are one object in audio; two ports in video, so a replacement may supply either). `bullterrier_video.adapters.audio` wraps it as the plain-data objects the core calls (`beats()`, `hits("kick")`, `band("bass", start, end)`, `cut`, `fade`, `normalised`, `samples()` interleaved); it is the one file that names the audio library |
 
 **Camera, tracks and transitions go through `Compose`.** Video draws each clip with the Picture port, then stacks the frames: a
 title is a layer on a second track; a transition is the outgoing frame, the incoming frame with a **mask video generates** (a
@@ -130,13 +134,20 @@ mask; the camera is the finished frame placed by one `View`. Video makes the mas
 does the blend and the placement. The scene adapter is the one that builds layers, so it imports scene (its Python adapter,
 lazily) and it is not duck-typed.
 
+## ffmpeg
+
+ffmpeg runs as a **separate program**, never linked: the encoder port's first adapter feeds it raw 16-bit RGB frames (flattened over
+black) on its standard input and a float WAV of the soundtrack, and ffmpeg's own scaler dithers down to the codec's 8 or 10 bits
+(BT.709, limited range, tagged so players agree). It is the program named by `BT_VIDEO_FFMPEG`, else `ffmpeg` on `PATH`; a missing
+one is a `PortError` that says so. Containers: mp4, mov (h264, hevc at 8 or 10 bits), gif, png. Why a program and not a library:
+[design-decisions.md](design-decisions.md).
+
 ## Dependencies
 
-The **core crate depends on no sibling.** Its ports are traits, its types are its own. Adapters for pure-Rust callers (a
-server, a command line) are separate crates (`bullterrier-video-scene`, `-control`, `-audio`, `-ffmpeg`); only they name a
-sibling crate, and only the scene adapter would need image's and vector's pins, which scene fixes, so video never builds a second
-copy. The Python package imports no sibling at import time. Git dependencies reach only pushed commits, so an adapter crate waits
-until the sibling revision it uses is pushed. (Proposed; confirmed when the first adapter crate is made.)
+The **core crate depends on no sibling and no crate beyond the standard library.** Its ports are traits, its types are its own, and
+the ffmpeg adapter is a module in it (it adds nothing to link). Adapters for pure-Rust callers that name a sibling (a scene as a
+Picture) are separate crates, so only they need image's and vector's pins, which scene fixes, so video never builds a second copy.
+The Python package imports no sibling at import time; `bullterrier_audio` is imported when a song is put under a piece.
 
 ## Not in the first release
 

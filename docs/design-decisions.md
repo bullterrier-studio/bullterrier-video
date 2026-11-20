@@ -28,3 +28,44 @@ placement, opacity, blend and mask, and the picture port has no view. Video make
 `Frame`). The camera moves the finished frame, so no layer is drawn again and scene's cache holds. Music returns times and
 levels, not signals: a signal video made would be control's type in video's own return values, and control's functions take
 only control's signals, so the caller makes them from the levels.
+
+## ffmpeg is a program, not a library (2026-11-20)
+
+The encode port's adapter runs `ffmpeg` as a separate process fed on its standard input; it is never linked (`ffmpeg-next`, libav). *Reasons:*
+linking needs C headers at build time, makes the wheels bundle libav, complicates cross builds, puts GPL x264 inside our binary
+(a common ffmpeg build is `--enable-gpl`), and neither form works in WebAssembly; a program adds no crate, keeps our licence
+unaffected (GPL duties attach to whoever distributes a binary), and a pure-Rust user needs only `ffmpeg` on `PATH` or in
+`BT_VIDEO_FFMPEG`, with one clear error when it is missing. *What can replace it later,* one adapter each: audio decoding is
+already pure Rust (symphonia); an AV1 path could be rav1e with an mp4 muxer; there is no production permissive pure-Rust H.264,
+HEVC or AAC encoder, so footage and social formats keep ffmpeg or an operating system's encoder. *Not checked:* whether
+`ffmpeg-next`'s licence is in `deny.toml`'s allow list (believed WTFPL, which is not).
+
+**Frames cross the pipe as 16-bit RGB flattened over black.** ffmpeg's scaler does the reduction to 8 or 10 bits and dithers it by
+default (measured: a 16-bit dark ramp comes out as 8 distinct row patterns in 64, whatever `sws_dither` is set to), so video does no
+dithering of its own and banding in dark gradients is decided where the colour conversion is. BT.709, limited range, with the
+tags a player reads. The soundtrack goes in as a float WAV, padded with silence to the picture, so the two end together. The file
+is written under a temporary name and renamed when ffmpeg succeeded; a failure returns the end of ffmpeg's own message.
+
+## The frame loop (2026-11-20)
+
+Every mapped signal is read once for all the frames of its clip, on the calling thread, before any frame is drawn (control's
+`sample` takes arrays). Frames are drawn on N threads; a worker may be at most two frames per worker ahead of the one the
+encoder wants next (`FRAMES_AHEAD_PER_WORKER`), so memory stays flat (a frame in flight is 16 bytes a pixel) and the file does not
+depend on N. The Rust loop runs with the GIL released; each worker takes it only to call the picture (`with_values`, then scene's
+own `render`, which releases it). `DEFAULT_WORKERS` is a named parameter, chosen by measurement (BTVID-0003's demo), because scene
+and image already use every core inside one frame.
+
+## Mapping rules (2026-11-20)
+
+A mapped value is held to the parameter's described range: a cyclic one wraps, an integer rounds, a bool is on from one half. A pixel
+value is not scaled: scene reads `px` as design pixels at any size, so scaling here would do it twice. A signal is read at
+`max(t - lag, 0)`. A text, colour, choice or picture is set, never mapped; an address that is unknown (with the three nearest
+names), mapped twice, or both mapped and set is refused when the call is made, not at render. `Music.band` scales over the
+stretch asked for (the piece, or a part of it), not over the song, as a clip measured alone would be.
+
+## numpy and the audio adapter (2026-11-20)
+
+numpy is a runtime dependency of the package and of the bindings crate (`deny.toml` names it a wrapper there): pictures, signals and
+levels cross as arrays, and every sibling library uses it. The core names no numpy. The audio library is reached only through
+`bullterrier_video.adapters.audio`, which is imported lazily and returns plain lists and arrays, so the core never learns a
+sibling's method names, enums or array layout (audio gives one row a channel; the adapter interleaves).

@@ -97,7 +97,7 @@ fn a_pixel_value_is_not_scaled() {
 
 #[test]
 fn a_signal_is_read_late_by_its_lag_and_never_before_zero() {
-    let mut clip = clip_with("a", number(0.0, 10.0, false, false));
+    let mut clip = clip_with("a", number(-10.0, 10.0, false, false));
     clip.map("a", Arc::new(FnSignal(Box::new(|t| t))), 0.1)
         .unwrap_or_else(|e| unreachable!("{e}"));
     let frames = clip
@@ -114,7 +114,7 @@ fn a_signal_is_read_late_by_its_lag_and_never_before_zero() {
         })
         .collect();
     assert_eq!(read, vec![0.0, 0.0, 0.4, 1.9], "t - 0.1, held at zero");
-    let mut leading = clip_with("a", number(0.0, 10.0, false, false));
+    let mut leading = clip_with("a", number(-10.0, 10.0, false, false));
     leading
         .map("a", Arc::new(FnSignal(Box::new(|t| t))), -0.5)
         .unwrap_or_else(|e| unreachable!("{e}"));
