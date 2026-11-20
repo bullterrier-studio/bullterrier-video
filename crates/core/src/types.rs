@@ -10,11 +10,20 @@ use crate::error::Error;
 pub type Seconds = f64;
 
 /// One rendered picture: float32 RGBA, straight alpha, rows from the top, `width * height * 4` values. Cloning shares the pixels.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone)]
 pub struct Frame {
     width: usize,
     height: usize,
     pixels: Arc<[f32]>,
+}
+
+impl PartialEq for Frame {
+    /// The same size and the same pixels; frames that share their pixels are equal without comparing them.
+    fn eq(&self, other: &Self) -> bool {
+        self.width == other.width
+            && self.height == other.height
+            && (Arc::ptr_eq(&self.pixels, &other.pixels) || self.pixels == other.pixels)
+    }
 }
 
 impl Frame {

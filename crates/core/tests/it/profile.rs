@@ -62,3 +62,36 @@ fn the_defaults_are_eight_bit_h264_and_no_loudness_change() {
         .unwrap_or_else(|e| unreachable!("{e}"));
     assert_eq!((tuned.depth(), tuned.loudness()), (10, Some(-14.0)));
 }
+
+#[test]
+fn a_scaled_profile_has_the_sides_scaled_to_the_nearest_even_number_and_keeps_the_rest() {
+    let base = Profile::vertical(720, 30.0)
+        .and_then(|p| p.with_depth(10))
+        .map_or_else(|e| unreachable!("{e}"), |p| p.with_codec("hevc"));
+    let rows = [
+        (0.5, (360, 640)),
+        (0.25, (180, 320)),
+        (1.0, (720, 1280)),
+        (0.001, (2, 2)),
+    ];
+    for (factor, size) in rows {
+        let scaled = base.scaled(factor).unwrap_or_else(|e| unreachable!("{e}"));
+        assert_eq!((scaled.width(), scaled.height()), size, "x{factor}");
+        assert_eq!(
+            (scaled.fps(), scaled.depth(), scaled.codec(), scaled.safe()),
+            (30.0, 10, "hevc", (0.12, 0.80))
+        );
+    }
+    // 100 by 100 at a third is 33.3: the nearest even number is 34
+    assert_eq!(
+        Profile::square(100, 30.0)
+            .and_then(|p| p.scaled(1.0 / 3.0))
+            .map(|p| p.width()),
+        Ok(34)
+    );
+    for factor in [0.0, -0.5, f64::NAN, f64::INFINITY] {
+        assert!(matches!(base.scaled(factor), Err(Error::Invalid { .. })), "x{factor}");
+    }
+    assert_eq!(base.with_fps(24.0).map(|p| p.fps()), Ok(24.0));
+    assert!(matches!(base.with_fps(f64::NAN), Err(Error::Invalid { .. })));
+}

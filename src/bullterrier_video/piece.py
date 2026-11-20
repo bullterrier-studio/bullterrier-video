@@ -10,6 +10,7 @@ piece.render("mill.mp4")
 from __future__ import annotations
 
 import os
+from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
@@ -26,7 +27,7 @@ if TYPE_CHECKING:
 
     from ._native._core import Profile, Span
 
-__all__ = ["DEFAULT_SHEET_WIDTH", "DEFAULT_WORKERS", "Clip", "Piece", "render_all"]
+__all__ = ["DEFAULT_SHEET_WIDTH", "DEFAULT_WORKERS", "Clip", "Piece", "RenderStats", "render_all"]
 
 # Frames drawn at once. Scene and image already use every core inside one frame, so more workers only overlap the
 # short serial parts of a frame. Measured on the 300-frame mill (720 by 1280): 1 worker 77.6 s and 3.2 GB peak,
@@ -35,6 +36,18 @@ DEFAULT_WORKERS = 4
 
 # The long side in pixels of one cell of a contact sheet: five phone-shaped moments fit a screen at this size.
 DEFAULT_SHEET_WIDTH = 240
+
+
+@dataclass(frozen=True)
+class RenderStats:
+    """What a render did: the `frames` it wrote and how many of them it had to draw.
+
+    A frame whose clip and values equal the frame before it is not drawn again, so `drawn` is less than `frames`
+    for a piece that holds still (a poster that pauses, a gap, a title that sits).
+    """
+
+    frames: int
+    drawn: int
 
 
 class Clip:
@@ -114,14 +127,24 @@ class Piece:
         """The frame at `t` seconds, a float32 `(height, width, 4)` array, straight alpha."""
         return self._native.frame(t)
 
-    def render(self, path: str | os.PathLike[str], *, workers: int | None = None) -> None:
+    def render(self, path: str | os.PathLike[str], *, workers: int | None = None) -> RenderStats:
         """Renders the piece into the file `path` (mp4, mov, gif or png by its extension) with ffmpeg.
 
         Frames are drawn on `workers` threads (`DEFAULT_WORKERS` if `None`) and reach the encoder in order, so the file
-        does not depend on the number. The file appears only when ffmpeg succeeded. ffmpeg is the program named by
-        `BT_VIDEO_FFMPEG`, else `ffmpeg` on `PATH`.
+        does not depend on the number. A frame equal to the one before it is not drawn again. The file appears only when
+        ffmpeg succeeded. ffmpeg is the program named by `BT_VIDEO_FFMPEG`, else `ffmpeg` on `PATH`.
         """
-        self._native.render(os.fspath(path), DEFAULT_WORKERS if workers is None else workers)
+        frames, drawn = self._native.render(os.fspath(path), DEFAULT_WORKERS if workers is None else workers)
+        return RenderStats(frames, drawn)
+
+    def draft(self, scale: float = 0.5, *, fps: float | None = None) -> Piece:
+        """The same piece smaller (each side `scale` times, to the nearest even number) and, with `fps`, at that rate.
+
+        Pictures draw at any size, so a draft costs roughly `scale` squared of a render: a quick look before the real
+        one. Time is in seconds, so a lower `fps` costs nothing else. This piece is left as it was. Use a scale that
+        keeps whole pixels: a picture whose shape does not scale evenly is refused when it draws, naming both sizes.
+        """
+        return Piece._made(self._native.draft(scale, fps))
 
     def sheet(self, path: str | os.PathLike[str], at: Sequence[float], width: int = DEFAULT_SHEET_WIDTH) -> None:
         """Writes a contact sheet: the piece at each moment in `at` (seconds), side by side, to the picture `path`.
@@ -133,9 +156,15 @@ class Piece:
 
     def copy(self) -> Piece:
         """An independent piece sharing the pictures, signals and song: nothing the copy changes touches this one."""
-        copied = Piece(self.profile)
-        copied._native = self._native.copy()
-        return copied
+        return Piece._made(self._native.copy())
+
+    @classmethod
+    def _made(cls, native: _core.Piece) -> Piece:
+        """A piece around an existing core piece, with the profile that piece has."""
+        piece = cls.__new__(cls)
+        piece._native = native  # noqa: SLF001  (an alternate constructor sets its own class's attribute)
+        piece.profile = native.profile()
+        return piece
 
 
 def render_all(

@@ -34,7 +34,17 @@ pub struct Piece {
     song: Option<Song>,
 }
 
+/// What a render did: the frames it wrote, and how many of them it had to draw (a frame equal to the one before it is that frame again).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct RenderStats {
+    /// Frames written.
+    pub frames: usize,
+    /// Frames drawn.
+    pub drawn: usize,
+}
+
 /// What one frame is made of: the clip that draws it (`None`: nothing, so black) and the values to draw it with.
+#[derive(PartialEq)]
 struct Step {
     clip: Option<usize>,
     values: Values,
@@ -171,11 +181,12 @@ impl Piece {
     }
 
     /// Renders the piece into the file `path` through `encoder`, drawing frames on `workers` threads. The frames reach the encoder
-    /// in order and the file does not depend on the number of workers.
+    /// in order and the file does not depend on the number of workers. A frame whose clip and values equal the frame before it is
+    /// not drawn again: that frame is handed over once more (a held pose, a still, a gap costs one drawing).
     ///
     /// # Errors
     /// [`Error::Invalid`] when `workers` is zero or the piece cannot be laid out; the picture's, the signals' and the encoder's.
-    pub fn render(&self, encoder: &dyn Encode, path: &Path, workers: usize) -> Result<(), Error> {
+    pub fn render(&self, encoder: &dyn Encode, path: &Path, workers: usize) -> Result<RenderStats, Error> {
         if workers == 0 {
             return Err(invalid("workers must be at least one".into()));
         }
@@ -185,6 +196,15 @@ impl Piece {
         #[expect(clippy::cast_precision_loss, reason = "a frame index is far below 2^52")]
         let times: Vec<Seconds> = (0..frames).map(|i| i as f64 / fps).collect();
         let steps = self.steps(&layout, &times)?;
+        // the frames that need drawing, and for every frame which of them it is
+        let mut drawn_at: Vec<usize> = Vec::new();
+        let mut slot_of: Vec<usize> = Vec::with_capacity(frames);
+        for index in 0..frames {
+            if index == 0 || steps[index] != steps[index - 1] {
+                drawn_at.push(index);
+            }
+            slot_of.push(drawn_at.len() - 1);
+        }
         let samples = self.song.as_ref().map(|s| s.soundtrack().samples()).transpose()?;
         let audio = match (&self.song, &samples) {
             (Some(song), Some(samples)) => Some(Audio {
@@ -201,15 +221,18 @@ impl Piece {
             codec: self.profile.codec(),
             audio,
         };
-        let gate = Gate::new(frames, workers * FRAMES_AHEAD_PER_WORKER);
+        let gate = Gate::new(drawn_at.len(), workers * FRAMES_AHEAD_PER_WORKER);
         let (sender, receiver) = mpsc::channel();
         std::thread::scope(|scope| {
             for _ in 0..workers {
                 let sender = sender.clone();
-                let (gate, steps) = (&gate, &steps);
+                let (gate, steps, drawn_at) = (&gate, &steps, &drawn_at);
                 scope.spawn(move || {
-                    while let Some(index) = gate.claim() {
-                        if sender.send((index, self.draw_or_report(&steps[index]))).is_err() {
+                    while let Some(slot) = gate.claim() {
+                        if sender
+                            .send((slot, self.draw_or_report(&steps[drawn_at[slot]])))
+                            .is_err()
+                        {
                             break;
                         }
                     }
@@ -219,14 +242,37 @@ impl Piece {
             let mut ordered = Ordered {
                 receiver,
                 pending: BTreeMap::new(),
+                slot_of: &slot_of,
                 next: 0,
-                frames,
+                current: None,
                 gate: &gate,
             };
             let result = encoder.encode(&job, &mut ordered);
             gate.stop();
             drop(ordered);
             result
+        })?;
+        Ok(RenderStats {
+            frames,
+            drawn: drawn_at.len(),
+        })
+    }
+
+    /// The same piece as a draft: the frame `scale` times the size (each side to the nearest even number) and, if `fps` is given, at
+    /// that rate. Everything else is shared with this piece, which is left as it was. A picture draws at any size, so a draft costs
+    /// roughly `scale` squared of a full render; a picture whose shape does not scale to whole pixels is refused when it draws.
+    ///
+    /// # Errors
+    /// [`Error::Invalid`] when `scale` or `fps` is not a positive finite number.
+    pub fn draft(&self, scale: f64, fps: Option<f64>) -> Result<Self, Error> {
+        let scaled = self.profile.scaled(scale)?;
+        let profile = match fps {
+            Some(fps) => scaled.with_fps(fps)?,
+            None => scaled,
+        };
+        Ok(Self {
+            profile,
+            ..self.clone()
         })
     }
 
@@ -454,12 +500,15 @@ impl Gate {
     }
 }
 
-/// The frames in order, however the workers finish them.
+/// The frames in order, however the workers finish them, a frame that was not drawn again being the one drawn before.
 struct Ordered<'a> {
     receiver: Receiver<(usize, Result<Frame, Error>)>,
     pending: BTreeMap<usize, Result<Frame, Error>>,
+    /// For every frame, the drawing that makes it.
+    slot_of: &'a [usize],
     next: usize,
-    frames: usize,
+    /// The latest drawing and what it came to, for the frames that repeat it.
+    current: Option<(usize, Result<Frame, Error>)>,
     gate: &'a Gate,
 }
 
@@ -467,27 +516,32 @@ impl Iterator for Ordered<'_> {
     type Item = Result<Frame, Error>;
 
     fn next(&mut self) -> Option<Self::Item> {
-        if self.next >= self.frames {
-            return None;
+        let slot = *self.slot_of.get(self.next)?;
+        self.next += 1;
+        if let Some((held, frame)) = &self.current
+            && *held == slot
+        {
+            return Some(frame.clone());
         }
-        loop {
-            if let Some(frame) = self.pending.remove(&self.next) {
-                self.next += 1;
-                self.gate.consumed(self.next);
-                return Some(frame);
+        let frame = loop {
+            if let Some(frame) = self.pending.remove(&slot) {
+                break frame;
             }
             match self.receiver.recv() {
                 Ok((index, frame)) => {
                     self.pending.insert(index, frame);
                 }
                 Err(_) => {
-                    return Some(Err(Error::Port {
+                    break Err(Error::Port {
                         port: "picture",
                         message: "a render worker stopped before it drew every frame".into(),
-                    }));
+                    });
                 }
             }
-        }
+        };
+        self.gate.consumed(slot + 1);
+        self.current = Some((slot, frame.clone()));
+        Some(frame)
     }
 }
 

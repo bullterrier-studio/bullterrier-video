@@ -426,3 +426,37 @@ def test_render_all_makes_one_file_for_each_name_and_names_the_piece_that_fails(
     assert (tmp_path / "again" / "first.mp4").exists(), "what was made before the failure is kept"
     with pytest.raises(InvalidError, match="file name"):
         btv.render_all({"a/b": good}, tmp_path / "x")
+
+
+def test_a_render_says_how_many_frames_it_drew_and_a_held_frame_is_not_drawn_again(ffmpeg: Path, tmp_path: Path):
+    held, _ = piece_of()
+    held["a"].set({"level": 0.5})
+    assert held.render(tmp_path / "held.mp4") == btv.RenderStats(frames=4, drawn=1)
+    assert first_values(tmp_path / "held.mp4") == [32768] * 4, "every frame is there, drawn once"
+    moving, _ = piece_of()
+    moving["a"].map("level", Time())
+    assert moving.render(tmp_path / "moving.mp4") == btv.RenderStats(frames=4, drawn=4)
+
+
+class Scaling(FakeScene):
+    """A picture that draws its 2:3 shape at whatever size it is asked for, as a scene does."""
+
+    def render(self, size: int) -> np.ndarray:
+        return np.zeros((size, size * 2 // 3, 4), dtype=np.float32)
+
+    def with_values(self, values: dict[str, Any]) -> Scaling:
+        return Scaling()
+
+
+def test_a_draft_is_the_same_piece_smaller_and_slower_and_the_original_is_unchanged(ffmpeg: Path, tmp_path: Path):
+    piece = btv.Piece(btv.Profile(8, 12, 4))
+    piece.clip("a", Scaling(), end=1.0)
+    draft = piece.draft(0.5, fps=2)
+    assert (draft.profile.width, draft.profile.height, draft.profile.fps) == (4, 6, 2)
+    assert (piece.profile.width, piece.profile.height, piece.profile.fps) == (8, 12, 4), "the original is as it was"
+    assert draft.frame(0.0).shape == (6, 4, 4)
+    assert piece.frame(0.0).shape == (12, 8, 4)
+    assert draft.render(tmp_path / "draft.mp4").frames == 2, "one second at two a second"
+    assert piece.draft().profile.width == 4, "half size is the default"
+    with pytest.raises(InvalidError, match="positive"):
+        piece.draft(0)

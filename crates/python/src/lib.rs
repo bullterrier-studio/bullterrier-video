@@ -384,11 +384,25 @@ impl Piece {
             .map_err(|e| raised(py, &e))
     }
 
-    /// Renders the piece into `path` on `workers` threads.
+    /// Renders the piece into `path` on `workers` threads: `(frames written, frames drawn)`.
     #[expect(clippy::needless_pass_by_value, reason = "PyO3 extracts a path by value")]
-    fn render(&self, py: Python<'_>, path: PathBuf, workers: usize) -> PyResult<()> {
+    fn render(&self, py: Python<'_>, path: PathBuf, workers: usize) -> PyResult<(usize, usize)> {
         let piece = self.locked(py).clone();
-        py.detach(|| piece.render(&Ffmpeg::discover(), &path, workers))
-            .map_err(|e| raised(py, &e))
+        let stats = py
+            .detach(|| piece.render(&Ffmpeg::discover(), &path, workers))
+            .map_err(|e| raised(py, &e))?;
+        Ok((stats.frames, stats.drawn))
+    }
+
+    /// The profile the piece is written with.
+    fn profile(&self, py: Python<'_>) -> Profile {
+        Profile(self.locked(py).profile().clone())
+    }
+
+    /// The same piece as a draft: `scale` times the size and, if given, at `fps`.
+    #[pyo3(signature = (scale, fps=None))]
+    fn draft(&self, py: Python<'_>, scale: f64, fps: Option<f64>) -> PyResult<Self> {
+        let draft = self.locked(py).draft(scale, fps).map_err(|e| raised(py, &e))?;
+        Ok(Self(Mutex::new(draft)))
     }
 }

@@ -80,3 +80,16 @@ gif: a 135-pixel cell is normal. `render_all` is a plain loop in the package, on
 already uses every core), not a scheduler. A timing variant is the piece built again, because its mappings hold the song's moments;
 so a piece's choreography is best written relative to the drop (the mill's intro scales with the build length), or the keyframes of a
 shorter build run backwards, which the demo's first timing variant showed.
+
+## Where the render time goes, and the cheap wins kept (2026-11-20)
+
+Measured on the 300-frame mill (720 by 1280, one worker): drawing the frames 76.0 s, the whole render 77.6 s, the encoder alone about 1 s
+for 300 frames, so video's own pipeline (values, quantising, the pipe) is about 2 percent and the picture is almost all of it.
+Micro-optimising video would gain nothing; what can pay is not drawing, and drawing smaller. Kept for that: signals read once in
+bulk, one long-lived picture (scene's per-layer cache), frames streamed to the encoder and never stored, `Frame` pixels private (so
+half-float or 8-bit storage or another backend changes no API), a frame equal to the one before it drawn once (held poses, stills,
+gaps), and `draft` (a smaller, optionally slower copy of the piece). The render returns counts (`frames`, `drawn`) and no timings: the
+library keeps no clock (`docs/rules.md`), so a caller times the render, as the demos do. Deliberately later: sending the picture only
+the values that changed, letting a picture say how many cores it wants (scene and image already use every core inside a frame, so four
+workers gave 2.0 times, not 4), process workers for pictures that hold the GIL, hardware encoders (pointless while encoding costs a
+second).

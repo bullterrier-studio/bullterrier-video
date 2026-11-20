@@ -6,7 +6,7 @@ from importlib import metadata
 from ._native._core import Profile, scale
 from .errors import BullterrierVideoError, InvalidError, PortError
 from .music import Levels, Music, Section
-from .piece import Clip, Piece, render_all
+from .piece import Clip, Piece, RenderStats, render_all
 from .spans import Span, around_drop, bars, between, loudest, whole
 
 __version__ = metadata.version("bullterrier-video")
@@ -20,6 +20,7 @@ __all__ = [
     "Piece",
     "PortError",
     "Profile",
+    "RenderStats",
     "Section",
     "Span",
     "__version__",

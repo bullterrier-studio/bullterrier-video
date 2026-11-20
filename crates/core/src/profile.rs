@@ -98,6 +98,33 @@ impl Profile {
         Ok(self)
     }
 
+    /// The same profile with both sides scaled by `factor`, each to the nearest even number (at least 2): a draft is half the size.
+    /// The rate, depth, codec, loudness and safe area are kept.
+    ///
+    /// # Errors
+    /// [`Error::Invalid`] when `factor` is not a positive finite number.
+    pub fn scaled(&self, factor: f64) -> Result<Self, Error> {
+        if !(factor.is_finite() && factor > 0.0) {
+            return Err(invalid(format!("a scale is a positive number, got {factor}")));
+        }
+        Ok(Self {
+            width: even(f64::from(self.width) * factor),
+            height: even(f64::from(self.height) * factor),
+            ..self.clone()
+        })
+    }
+
+    /// The same profile at `fps` frames a second.
+    ///
+    /// # Errors
+    /// [`Error::Invalid`] when `fps` is not a positive finite number.
+    pub fn with_fps(&self, fps: f64) -> Result<Self, Error> {
+        if !(fps.is_finite() && fps > 0.0) {
+            return Err(invalid(format!("fps must be a positive number, got {fps}")));
+        }
+        Ok(Self { fps, ..self.clone() })
+    }
+
     /// Columns.
     #[must_use]
     pub fn width(&self) -> u32 {

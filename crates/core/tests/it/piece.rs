@@ -5,7 +5,9 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex, PoisonError};
 
 use bullterrier_video::ports::{Encode, Job, Picture};
-use bullterrier_video::{Error, FRAMES_AHEAD_PER_WORKER, Frame, Parameter, Piece, Profile, Span, Value, Values};
+use bullterrier_video::{
+    Error, FRAMES_AHEAD_PER_WORKER, Frame, Parameter, Piece, Profile, RenderStats, Span, Value, Values,
+};
 
 use crate::common::fakes::{FakeMusic, FakeSound, FnSignal, number, parameter};
 
@@ -173,7 +175,7 @@ fn piece(fps: f64, picture: Arc<dyn Picture>) -> Piece {
     piece
 }
 
-fn render(piece: &Piece, encoder: &Collect, workers: usize) -> Result<(), Error> {
+fn render(piece: &Piece, encoder: &Collect, workers: usize) -> Result<RenderStats, Error> {
     piece.render(encoder, Path::new("out.mp4"), workers)
 }
 
@@ -581,4 +583,100 @@ fn cells_of_different_sizes_are_refused_naming_both() {
         unreachable!("accepted")
     };
     assert!(message.contains("6 by 6") && message.contains("5 by 5"), "{message}");
+}
+
+#[test]
+fn a_frame_equal_to_the_one_before_is_drawn_once_and_handed_over_again() {
+    for workers in [1, 4] {
+        // a clip with one constant value: eight frames, one drawing
+        let (picture, drawn) = Flat::new();
+        let mut held = Piece::new(Profile::square(4, 4.0).unwrap_or_else(|e| unreachable!("{e}")));
+        held.song(
+            Arc::new(FakeMusic::of(2.0)),
+            &FakeSound::of(2.0),
+            &Span::Whole,
+            0.0,
+            0.0,
+        )
+        .unwrap_or_else(|e| unreachable!("{e}"));
+        held.clip("a", picture, 0.0, None)
+            .unwrap_or_else(|e| unreachable!("{e}"));
+        held.clip_mut("a")
+            .and_then(|c| c.set(Values::from([("level".to_string(), Value::Number(0.5))])))
+            .unwrap_or_else(|e| unreachable!("{e}"));
+        let encoder = Collect::default();
+        let stats = render(&held, &encoder, workers).unwrap_or_else(|e| unreachable!("{e}"));
+        assert_eq!(levels(&encoder), vec![0.5; 8], "{workers} workers");
+        assert_eq!(
+            (stats, drawn.load(Ordering::SeqCst)),
+            (RenderStats { frames: 8, drawn: 1 }, 1),
+            "{workers} workers"
+        );
+
+        // the level is the time, held at one from one second on: four different frames, then four the same
+        let (picture, drawn) = Flat::new();
+        let encoder = Collect::default();
+        let stats = render(&piece(4.0, picture), &encoder, workers).unwrap_or_else(|e| unreachable!("{e}"));
+        assert_eq!(levels(&encoder), vec![0.0, 0.25, 0.5, 0.75, 1.0, 1.0, 1.0, 1.0]);
+        assert_eq!(
+            (stats.frames, stats.drawn, drawn.load(Ordering::SeqCst)),
+            (8, 5, 5),
+            "{workers} workers"
+        );
+    }
+}
+
+#[test]
+fn a_draft_is_the_same_piece_smaller_and_at_a_lower_rate_and_leaves_the_original_alone() {
+    let mut full = Piece::new(Profile::square(8, 4.0).unwrap_or_else(|e| unreachable!("{e}")));
+    full.song(
+        Arc::new(FakeMusic::of(2.0)),
+        &FakeSound::of(2.0),
+        &Span::Whole,
+        0.0,
+        0.0,
+    )
+    .unwrap_or_else(|e| unreachable!("{e}"));
+    full.clip("a", Flat::new().0, 0.0, None)
+        .unwrap_or_else(|e| unreachable!("{e}"));
+    full.clip_mut("a")
+        .and_then(|c| c.map("level", Arc::new(FnSignal(Box::new(|t| t))), 0.0))
+        .unwrap_or_else(|e| unreachable!("{e}"));
+    let draft = full.draft(0.5, Some(2.0)).unwrap_or_else(|e| unreachable!("{e}"));
+    assert_eq!(
+        (draft.profile().width(), draft.profile().height(), draft.profile().fps()),
+        (4, 4, 2.0)
+    );
+    assert_eq!(
+        (draft.frame_count(), full.frame_count()),
+        (Ok(4), Ok(8)),
+        "two seconds at two a second and at four a second"
+    );
+    let encoder = Collect::default();
+    render(&draft, &encoder, 2).unwrap_or_else(|e| unreachable!("{e}"));
+    assert_eq!(
+        levels(&encoder),
+        vec![0.0, 0.5, 1.0, 1.0],
+        "the same mapping, read at the draft's moments"
+    );
+    assert_eq!(
+        full.frame(0.5).map(|f| (f.width(), f.height())),
+        Ok((8, 8)),
+        "the original is as it was"
+    );
+    assert_eq!(
+        full.draft(0.5, None).map(|d| d.profile().fps()),
+        Ok(4.0),
+        "no rate given: the rate is kept"
+    );
+    for scale in [0.0, -1.0, f64::NAN, f64::INFINITY] {
+        assert!(
+            matches!(full.draft(scale, None), Err(Error::Invalid { .. })),
+            "scale {scale}"
+        );
+    }
+    assert!(
+        matches!(full.draft(0.5, Some(0.0)), Err(Error::Invalid { .. })),
+        "a rate of zero"
+    );
 }
