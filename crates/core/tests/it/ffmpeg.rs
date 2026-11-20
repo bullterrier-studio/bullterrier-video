@@ -431,3 +431,15 @@ fn a_file_that_cannot_be_moved_into_place_leaves_no_temporary_file_behind() {
         "only the stand-in's own files and the target"
     );
 }
+
+#[test]
+fn odd_sides_are_fine_for_a_picture_and_a_gif_but_not_for_video() {
+    for name in ["sheet.png", "clip.gif"] {
+        let dir = TempDir::new().unwrap_or_else(|e| unreachable!("{e}"));
+        let out = dir.path().join(name);
+        Ffmpeg::new(working(dir.path()))
+            .encode(&job(&out, None), &mut vec![frame(3, 5, [0.0; 4])].into_iter())
+            .unwrap_or_else(|e| unreachable!("{name}: {e}"));
+        assert_eq!(fs::read(&out).map(|b| b.len()).ok(), Some(3 * 5 * 6), "{name}");
+    }
+}

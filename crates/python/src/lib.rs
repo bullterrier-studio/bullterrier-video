@@ -376,6 +376,14 @@ impl Piece {
         PyArray1::from_slice(py, frame.pixels()).reshape([frame.height(), frame.width(), 4])
     }
 
+    /// A contact sheet of the piece at the moments `at`, each cell `width` pixels along its long side, written to `path`.
+    #[expect(clippy::needless_pass_by_value, reason = "PyO3 extracts a path and a list by value")]
+    fn sheet(&self, py: Python<'_>, path: PathBuf, at: Vec<f64>, width: u32) -> PyResult<()> {
+        let piece = self.locked(py).clone();
+        py.detach(|| piece.sheet(&Ffmpeg::discover(), &path, &at, width))
+            .map_err(|e| raised(py, &e))
+    }
+
     /// Renders the piece into `path` on `workers` threads.
     #[expect(clippy::needless_pass_by_value, reason = "PyO3 extracts a path by value")]
     fn render(&self, py: Python<'_>, path: PathBuf, workers: usize) -> PyResult<()> {

@@ -20,7 +20,7 @@ mod types;
 pub use clip::Clip;
 pub use error::Error;
 pub use ffmpeg::Ffmpeg;
-pub use piece::{FRAMES_AHEAD_PER_WORKER, Piece};
+pub use piece::{FRAMES_AHEAD_PER_WORKER, Piece, SHEET_GAP};
 pub use profile::Profile;
 pub use scaling::scale;
 pub use song::{Levels, Song};

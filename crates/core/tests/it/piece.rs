@@ -16,6 +16,7 @@ struct Flat {
     fail_from: Option<f64>,
     panic_from: Option<f64>,
     shrink: bool,
+    steps_down_from: Option<f64>,
 }
 
 impl Flat {
@@ -25,6 +26,7 @@ impl Flat {
             fail_from,
             panic_from,
             shrink,
+            steps_down_from: None,
         })
     }
 
@@ -40,6 +42,17 @@ impl Flat {
 
     fn too_small() -> Arc<Self> {
         Self::with(None, None, true)
+    }
+
+    /// A picture one pixel smaller from `level` on.
+    fn steps_down_at(level: f64) -> Arc<Self> {
+        Arc::new(Self {
+            drawn: Arc::new(AtomicUsize::new(0)),
+            fail_from: None,
+            panic_from: None,
+            shrink: false,
+            steps_down_from: Some(level),
+        })
     }
 
     fn panicking_from(level: f64) -> Arc<Self> {
@@ -75,13 +88,35 @@ impl Picture for Flat {
                 message: "too bright".into(),
             });
         }
-        let side = (long_side - u32::from(self.shrink)) as usize;
+        let side = (long_side
+            - u32::from(self.shrink)
+            - u32::from(self.steps_down_from.is_some_and(|from| *level >= from))) as usize;
         Frame::new(side, side, [*level as f32, 0.0, 0.0, 1.0].repeat(side * side))
     }
 }
 
 /// What an encoder was asked to write: the rate, depth, codec, and the soundtrack's rate, channels and samples.
 type Wrote = (f64, u8, String, Option<(u32, u16, Vec<f32>)>);
+
+/// An encoder that keeps the one frame it is given whole, and the file it was asked to write.
+#[derive(Default)]
+struct Capture {
+    frame: Mutex<Option<Frame>>,
+    path: Mutex<Option<std::path::PathBuf>>,
+}
+
+impl Encode for Capture {
+    fn encode(&self, job: &Job<'_>, frames: &mut dyn Iterator<Item = Result<Frame, Error>>) -> Result<(), Error> {
+        *self.path.lock().unwrap_or_else(PoisonError::into_inner) = Some(job.path.to_path_buf());
+        let mut kept = None;
+        for frame in frames {
+            assert!(kept.is_none(), "a sheet is one frame");
+            kept = Some(frame?);
+        }
+        *self.frame.lock().unwrap_or_else(PoisonError::into_inner) = kept;
+        Ok(())
+    }
+}
 
 /// An encoder that keeps the first value of every frame and what it was asked to write.
 #[derive(Default)]
@@ -444,4 +479,106 @@ fn a_picture_that_panics_is_an_error_naming_it_and_never_a_hang() {
             "{message}"
         );
     }
+}
+
+/// The grey of the sheet's gaps and of a moment nothing draws: `SHEET_GAP` pixels of it between cells.
+const GAP: usize = bullterrier_video::SHEET_GAP;
+
+fn sheet_of(piece: &Piece, at: &[f64], width: u32) -> Result<Frame, Error> {
+    let capture = Capture::default();
+    piece.sheet(&capture, Path::new("sheet.png"), at, width)?;
+    assert_eq!(
+        *capture.path.lock().unwrap_or_else(PoisonError::into_inner),
+        Some(Path::new("sheet.png").to_path_buf())
+    );
+    Ok(capture
+        .frame
+        .lock()
+        .unwrap_or_else(PoisonError::into_inner)
+        .take()
+        .unwrap_or_else(|| unreachable!("no sheet")))
+}
+
+#[test]
+fn a_sheet_is_the_chosen_moments_side_by_side_at_a_small_size() {
+    let piece = piece(4.0, Flat::new().0);
+    let sheet = sheet_of(&piece, &[0.25, 0.5, 1.0], 6).unwrap_or_else(|e| unreachable!("{e}"));
+    // the flat picture draws long_side by long_side squares: three cells of 6 and two gaps
+    assert_eq!((sheet.width(), sheet.height()), (3 * 6 + 2 * GAP, 6));
+    let red = |column: usize| sheet.pixels()[column * 4];
+    assert_eq!(
+        (red(0), red(6 + GAP), red(2 * (6 + GAP))),
+        (0.25, 0.5, 1.0),
+        "the level is the time, held to one"
+    );
+    assert_eq!(red(6), red(6 + GAP - 1), "the gap is one colour");
+    assert_ne!(red(6), 0.25, "and not a cell's");
+}
+
+#[test]
+fn a_moment_no_clip_draws_is_a_black_cell_of_the_others_size() {
+    let mut piece = Piece::new(Profile::square(4, 4.0).unwrap_or_else(|e| unreachable!("{e}")));
+    piece
+        .song(
+            Arc::new(FakeMusic::of(2.0)),
+            &FakeSound::of(2.0),
+            &Span::Whole,
+            0.0,
+            0.0,
+        )
+        .unwrap_or_else(|e| unreachable!("{e}"));
+    piece
+        .clip("late", Flat::new().0, 1.0, None)
+        .unwrap_or_else(|e| unreachable!("{e}"));
+    piece
+        .clip_mut("late")
+        .and_then(|c| c.set(Values::from([("level".to_string(), Value::Number(0.5))])))
+        .unwrap_or_else(|e| unreachable!("{e}"));
+    let sheet = sheet_of(&piece, &[0.0, 1.5], 6).unwrap_or_else(|e| unreachable!("{e}"));
+    assert_eq!((sheet.width(), sheet.height()), (2 * 6 + GAP, 6));
+    assert_eq!(
+        &sheet.pixels()[..4],
+        &[0.0, 0.0, 0.0, 1.0],
+        "black before the clip starts"
+    );
+    assert_eq!(sheet.pixels()[(6 + GAP) * 4], 0.5);
+}
+
+#[test]
+fn a_sheet_that_cannot_be_made_is_refused_naming_why() {
+    let piece = piece(4.0, Flat::new().0);
+    let invalid = |r: Result<Frame, Error>| matches!(r, Err(Error::Invalid { .. }));
+    assert!(invalid(sheet_of(&piece, &[], 6)), "no moments");
+    assert!(invalid(sheet_of(&piece, &[0.5], 1)), "a cell of one pixel");
+    for t in [-0.1, 2.0, 3.0, f64::NAN] {
+        assert!(
+            invalid(sheet_of(&piece, &[0.5, t], 6)),
+            "{t} s is outside the two-second piece"
+        );
+    }
+}
+
+#[test]
+fn cells_of_different_sizes_are_refused_naming_both() {
+    let mut piece = Piece::new(Profile::square(4, 4.0).unwrap_or_else(|e| unreachable!("{e}")));
+    piece
+        .song(
+            Arc::new(FakeMusic::of(2.0)),
+            &FakeSound::of(2.0),
+            &Span::Whole,
+            0.0,
+            0.0,
+        )
+        .unwrap_or_else(|e| unreachable!("{e}"));
+    piece
+        .clip("a", Flat::steps_down_at(0.5), 0.0, None)
+        .unwrap_or_else(|e| unreachable!("{e}"));
+    piece
+        .clip_mut("a")
+        .and_then(|c| c.map("level", Arc::new(FnSignal(Box::new(|t| t))), 0.0))
+        .unwrap_or_else(|e| unreachable!("{e}"));
+    let Err(Error::Port { message, .. }) = sheet_of(&piece, &[0.25, 1.0], 6) else {
+        unreachable!("accepted")
+    };
+    assert!(message.contains("6 by 6") && message.contains("5 by 5"), "{message}");
 }

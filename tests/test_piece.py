@@ -387,3 +387,42 @@ def test_a_slow_picture_in_one_thread_does_not_lock_another_threads_piece_calls(
     adding.join()
     copying.join()
     assert piece["slow"].name == "slow"
+
+
+def test_a_sheet_is_the_chosen_moments_side_by_side(ffmpeg: Path, tmp_path: Path):
+    piece, _ = piece_of()
+    piece["a"].map("level", Time())
+    out = tmp_path / "sheet.png"
+    piece.sheet(out, [0.0, 0.5], width=6)
+    data = out.read_bytes()
+    cell_width, gap = WIDTH, 6  # the fake scene draws 4 by 6 whatever size it is asked for; the gap is the library's
+    row = (2 * cell_width + gap) * 6  # bytes in a row of the sheet
+    assert len(data) == row * HEIGHT
+    pixel = lambda column: int.from_bytes(data[column * 6 : column * 6 + 2], "little")  # noqa: E731
+    assert pixel(0) == 0, "the level at 0 s"
+    assert pixel(cell_width) == round(0.12 * 65535), "the grey between the cells"
+    assert pixel(cell_width + gap) == 32768, "the level at 0.5 s"
+
+
+def test_a_sheet_that_cannot_be_made_is_an_invalid_error(tmp_path: Path):
+    piece, _ = piece_of()
+    with pytest.raises(InvalidError, match="at least one moment"):
+        piece.sheet(tmp_path / "s.png", [])
+    with pytest.raises(InvalidError, match="not inside the piece"):
+        piece.sheet(tmp_path / "s.png", [0.5, 2.0])
+
+
+def test_render_all_makes_one_file_for_each_name_and_names_the_piece_that_fails(ffmpeg: Path, tmp_path: Path):
+    good, _ = piece_of()
+    good["a"].map("level", Time())
+    other = good.copy()
+    made = btv.render_all({"one": good, "two": other}, tmp_path / "out" / "deep", workers=1)
+    assert sorted(made) == ["one", "two"]
+    assert [p.name for p in made.values()] == ["one.mp4", "two.mp4"]
+    assert made["one"].read_bytes() == made["two"].read_bytes() != b""
+    broken = btv.Piece(btv.Profile(WIDTH, HEIGHT, 4))  # nothing gives it a length
+    with pytest.raises(InvalidError, match="piece `broken`"):
+        btv.render_all({"first": good, "broken": broken}, tmp_path / "again")
+    assert (tmp_path / "again" / "first.mp4").exists(), "what was made before the failure is kept"
+    with pytest.raises(InvalidError, match="file name"):
+        btv.render_all({"a/b": good}, tmp_path / "x")

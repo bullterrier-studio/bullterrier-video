@@ -1,7 +1,7 @@
 # The stub of the Rust extension `bullterrier_video._native._core` (crates/python). The documentation is the
 # extension's own (`help(Piece)`).
 
-from collections.abc import Mapping
+from collections.abc import Mapping, Sequence
 from os import PathLike
 from typing import Any, final
 
@@ -85,3 +85,4 @@ class Piece:
     def frame_count(self) -> int: ...
     def frame(self, t: float) -> npt.NDArray[np.float32]: ...
     def render(self, path: str | PathLike[str], workers: int) -> None: ...
+    def sheet(self, path: str | PathLike[str], at: Sequence[float], width: int) -> None: ...

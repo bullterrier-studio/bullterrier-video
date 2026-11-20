@@ -17,6 +17,12 @@ use crate::types::{Frame, Seconds, Values};
 /// 16 bytes a pixel, 15 MB at 720 by 1280.
 pub const FRAMES_AHEAD_PER_WORKER: usize = 2;
 
+/// The width in pixels of the gap between the cells of a contact sheet (a dark grey, so that a black cell shows against it).
+pub const SHEET_GAP: usize = 6;
+
+/// The grey of a sheet's gaps.
+const SHEET_BACKGROUND: [f32; 4] = [0.12, 0.12, 0.12, 1.0];
+
 /// A video being made: a [`Profile`], clips, and at most one [`Song`].
 ///
 /// Built by calls that check what they are given; every later error is a refusal of the picture or the encoder. A piece is
@@ -291,23 +297,101 @@ impl Piece {
     /// One frame: the clip's picture with the values, or black where no clip is.
     fn draw(&self, step: &Step) -> Result<Frame, Error> {
         let (width, height) = (self.profile.width() as usize, self.profile.height() as usize);
-        let Some(index) = step.clip else {
-            return Frame::new(width, height, [0.0, 0.0, 0.0, 1.0].repeat(width * height));
-        };
-        let clip = &self.clips[index];
-        let frame = clip.picture().render(&step.values, self.profile.long_side())?;
+        match step.clip {
+            None => Frame::new(width, height, [0.0, 0.0, 0.0, 1.0].repeat(width * height)),
+            Some(index) => {
+                let frame = self.clips[index]
+                    .picture()
+                    .render(&step.values, self.profile.long_side())?;
+                self.in_profile_shape(index, frame)
+            }
+        }
+    }
+
+    /// `frame`, refused if it is not the shape of the profile.
+    fn in_profile_shape(&self, index: usize, frame: Frame) -> Result<Frame, Error> {
+        let (width, height) = (self.profile.width() as usize, self.profile.height() as usize);
         if (frame.width(), frame.height()) != (width, height) {
             return Err(Error::Port {
                 port: "picture",
                 message: format!(
                     "clip `{}` drew {} by {} but the profile is {width} by {height}: make the picture the shape of the profile",
-                    clip.name(),
+                    self.clips[index].name(),
                     frame.width(),
                     frame.height()
                 ),
             });
         }
         Ok(frame)
+    }
+
+    /// A contact sheet: the piece at each of the moments `at` (seconds), every one drawn `width` pixels along its long side, side by
+    /// side with [`SHEET_GAP`] between, written as one picture to `path` through `encoder`. A moment no clip draws is a black cell.
+    ///
+    /// # Errors
+    /// [`Error::Invalid`] when `at` is empty, a moment is not inside the piece, or `width` is under two pixels;
+    /// [`Error::Port`] when the pictures draw cells of different sizes, and the pictures' and the encoder's errors.
+    pub fn sheet(&self, encoder: &dyn Encode, path: &Path, at: &[Seconds], width: u32) -> Result<(), Error> {
+        if at.is_empty() || width < 2 {
+            return Err(invalid(format!(
+                "a sheet needs at least one moment and cells of two pixels or more, got {} and {width}",
+                at.len()
+            )));
+        }
+        let duration = self.duration()?;
+        if let Some(t) = at.iter().find(|t| !(t.is_finite() && **t >= 0.0 && **t < duration)) {
+            return Err(invalid(format!(
+                "the moment {t} s is not inside the piece, which lasts {duration} s"
+            )));
+        }
+        let layout = self.layout()?;
+        let steps = self.steps(&layout, at)?;
+        let drawn = steps
+            .iter()
+            .map(|step| {
+                step.clip
+                    .map(|index| self.clips[index].picture().render(&step.values, width))
+                    .transpose()
+            })
+            .collect::<Result<Vec<Option<Frame>>, Error>>()?;
+        let (cell_width, cell_height) = drawn.iter().flatten().next().map_or_else(
+            || {
+                // nothing draws at any moment: black cells in the profile's shape at this size
+                let long = f64::from(self.profile.long_side());
+                #[expect(
+                    clippy::cast_possible_truncation,
+                    clippy::cast_sign_loss,
+                    reason = "a cell side is a small positive number of pixels"
+                )]
+                let scale = |side: u32| ((f64::from(side) * f64::from(width) / long).round() as usize).max(1);
+                (scale(self.profile.width()), scale(self.profile.height()))
+            },
+            |frame| (frame.width(), frame.height()),
+        );
+        let cells = drawn
+            .into_iter()
+            .map(|cell| {
+                cell.map_or_else(
+                    || {
+                        Frame::new(
+                            cell_width,
+                            cell_height,
+                            [0.0, 0.0, 0.0, 1.0].repeat(cell_width * cell_height),
+                        )
+                    },
+                    Ok,
+                )
+            })
+            .collect::<Result<Vec<Frame>, Error>>()?;
+        let sheet = tile(&cells)?;
+        let job = Job {
+            path,
+            fps: 1.0,
+            depth: 8,
+            codec: "h264",
+            audio: None,
+        };
+        encoder.encode(&job, &mut std::iter::once(Ok(sheet)))
     }
 
     fn no_clip(&self, name: &str) -> Error {
@@ -409,4 +493,30 @@ impl Iterator for Ordered<'_> {
 
 fn invalid(message: String) -> Error {
     Error::Invalid { message }
+}
+
+/// The cells in one row, `SHEET_GAP` apart.
+fn tile(cells: &[Frame]) -> Result<Frame, Error> {
+    let (cell_width, height) = (cells[0].width(), cells[0].height());
+    if let Some(odd) = cells.iter().find(|c| (c.width(), c.height()) != (cell_width, height)) {
+        return Err(Error::Port {
+            port: "picture",
+            message: format!(
+                "the cells of a sheet must be one size: {cell_width} by {height} and {} by {}",
+                odd.width(),
+                odd.height()
+            ),
+        });
+    }
+    let width = cells.len() * cell_width + (cells.len() - 1) * SHEET_GAP;
+    let mut pixels = SHEET_BACKGROUND.repeat(width * height);
+    for (n, cell) in cells.iter().enumerate() {
+        let left = n * (cell_width + SHEET_GAP);
+        for row in 0..height {
+            let from = row * cell_width * 4;
+            let to = (row * width + left) * 4;
+            pixels[to..to + cell_width * 4].copy_from_slice(&cell.pixels()[from..from + cell_width * 4]);
+        }
+    }
+    Frame::new(width, height, pixels)
 }

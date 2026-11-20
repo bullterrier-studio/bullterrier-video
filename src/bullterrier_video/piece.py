@@ -10,26 +10,31 @@ piece.render("mill.mp4")
 from __future__ import annotations
 
 import os
+from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 from ._native import _core
 from .adapters.audio import AudioMusic, AudioSound
+from .errors import BullterrierVideoError, InvalidError
 from .music import Music
 
 if TYPE_CHECKING:
-    from collections.abc import Mapping
+    from collections.abc import Mapping, Sequence
 
     import numpy as np
     from numpy.typing import NDArray
 
     from ._native._core import Profile, Span
 
-__all__ = ["DEFAULT_WORKERS", "Clip", "Piece"]
+__all__ = ["DEFAULT_SHEET_WIDTH", "DEFAULT_WORKERS", "Clip", "Piece", "render_all"]
 
 # Frames drawn at once. Scene and image already use every core inside one frame, so more workers only overlap the
 # short serial parts of a frame. Measured on the 300-frame mill (720 by 1280): 1 worker 77.6 s and 3.2 GB peak,
 # 2 workers 48.6 s, 4 workers 38.1 s and 4.0 GB peak, the file identical at each.
 DEFAULT_WORKERS = 4
+
+# The long side in pixels of one cell of a contact sheet: five phone-shaped moments fit a screen at this size.
+DEFAULT_SHEET_WIDTH = 240
 
 
 class Clip:
@@ -118,8 +123,41 @@ class Piece:
         """
         self._native.render(os.fspath(path), DEFAULT_WORKERS if workers is None else workers)
 
+    def sheet(self, path: str | os.PathLike[str], at: Sequence[float], width: int = DEFAULT_SHEET_WIDTH) -> None:
+        """Writes a contact sheet: the piece at each moment in `at` (seconds), side by side, to the picture `path`.
+
+        Each cell is drawn `width` pixels along its long side, so a sheet takes a few frames' time, not a render's. A
+        moment no clip draws is a black cell. Refused if `at` is empty or a moment is not inside the piece.
+        """
+        self._native.sheet(os.fspath(path), list(at), width)
+
     def copy(self) -> Piece:
         """An independent piece sharing the pictures, signals and song: nothing the copy changes touches this one."""
         copied = Piece(self.profile)
         copied._native = self._native.copy()
         return copied
+
+
+def render_all(
+    pieces: Mapping[str, Piece], folder: str | os.PathLike[str], *, workers: int | None = None, extension: str = "mp4"
+) -> dict[str, Path]:
+    """Renders every piece into `folder` as `<name>.<extension>`, one after another, each with all `workers`.
+
+    Returns the file of each name. The folder is made if it is missing. A name must be a plain file name. A piece that
+    cannot be rendered stops the run: its error names the piece, and the files made before it are kept.
+    """
+    for name in pieces:
+        if not name or Path(name).name != name or name in {".", ".."}:
+            message = f"a piece's name is its file name, so it cannot be `{name}`: no folders, not empty"
+            raise InvalidError(message)
+    target = Path(folder)
+    target.mkdir(parents=True, exist_ok=True)
+    made: dict[str, Path] = {}
+    for name, piece in pieces.items():
+        file = target / f"{name}.{extension}"
+        try:
+            piece.render(file, workers=workers)
+        except BullterrierVideoError as error:
+            raise type(error)(f"piece `{name}`: {error}") from error
+        made[name] = file
+    return made

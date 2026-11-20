@@ -74,9 +74,11 @@ impl Encode for Ffmpeg {
             .next()
             .ok_or_else(|| port("there are no frames to encode".into()))??;
         let (width, height) = (first.width(), first.height());
-        if width % 2 != 0 || height % 2 != 0 {
+        if matches!(container, Container::Mp4 | Container::Mov)
+            && !(width.is_multiple_of(2) && height.is_multiple_of(2))
+        {
             return Err(port(format!(
-                "a frame of {width} by {height} cannot be encoded: the sides must be even"
+                "a frame of {width} by {height} cannot be encoded as video: the sides must be even"
             )));
         }
         let part = sibling(job.path, "part");
