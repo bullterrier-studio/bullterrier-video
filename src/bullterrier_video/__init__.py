@@ -1,10 +1,32 @@
-"""bullterrier-video: a placeholder Rust-first project with a Python interface (see README.md and CLAUDE.md)."""
+"""bullterrier-video: decides what happens when and what drives what in a video, then renders it (see README.md and
+CLAUDE.md)."""
 
 from importlib import metadata
 
-from ._native._core import scale
-from .errors import BullterrierVideoError, InvalidError
+from ._native._core import Profile, scale
+from .errors import BullterrierVideoError, InvalidError, PortError
+from .music import Levels, Music, Section
+from .piece import Clip, Piece
+from .spans import Span, around_drop, bars, between, loudest, whole
 
 __version__ = metadata.version("bullterrier-video")
 
-__all__ = ["BullterrierVideoError", "InvalidError", "__version__", "scale"]
+__all__ = [
+    "BullterrierVideoError",
+    "Clip",
+    "InvalidError",
+    "Levels",
+    "Music",
+    "Piece",
+    "PortError",
+    "Profile",
+    "Section",
+    "Span",
+    "__version__",
+    "around_drop",
+    "bars",
+    "between",
+    "loudest",
+    "scale",
+    "whole",
+]

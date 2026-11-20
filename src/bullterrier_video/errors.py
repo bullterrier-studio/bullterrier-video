@@ -7,7 +7,7 @@ code that already catches that builtin keeps working.
 Dependency direction: the bottom layer. It imports nothing from bullterrier_video, so every layer may raise them.
 """
 
-__all__ = ["BullterrierVideoError", "InvalidError"]
+__all__ = ["BullterrierVideoError", "InvalidError", "PortError"]
 
 
 class BullterrierVideoError(Exception):
@@ -16,3 +16,8 @@ class BullterrierVideoError(Exception):
 
 class InvalidError(BullterrierVideoError, ValueError):
     """A value breaks a rule: the message names the argument and what is valid."""
+
+
+class PortError(BullterrierVideoError, RuntimeError):
+    """A library behind a port refused or failed: the message names the port (`picture`, `signal`, `music`, `sound`,
+    `encode`) and what it said, such as a missing method or ffmpeg's own complaint."""

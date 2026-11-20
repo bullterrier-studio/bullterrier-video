@@ -23,9 +23,9 @@ classifiers = [
     "Programming Language :: Python :: 3.14",
     "Typing :: Typed",
 ]
-# Each is declared with the first code that imports it (deptry fails on one nothing imports). None yet: the
-# extension is the whole runtime.
-dependencies = []
+# Each is declared with the first code that imports it (deptry fails on one nothing imports). numpy: the arrays of pictures,
+# signals and levels that the extension reads and gives (every sibling library uses it too).
+dependencies = ["numpy>=1.26"]
 
 [project.urls]
 Repository = "https://github.com/bullterrier-studio/bullterrier-video"
@@ -328,13 +328,15 @@ DEP004 = ["packaging"]
 root_package = "bullterrier_video"
 
 [[tool.importlinter.contracts]]
-name = "Layers: __main__ > cli > _native > errors"
+name = "Layers: __main__ > cli > piece > adapters, music, spans > _native > errors"
 type = "layers"
 containers = ["bullterrier_video"]
 exhaustive = true  # a new top-level module must be placed in a layer here
 layers = [
     "__main__",  # `python -m bullterrier_video`: runs the command line
     "cli",  # app: the command line
+    "piece",  # the piece and its clips: the one place a caller builds a video
+    "adapters | music | spans",  # the audio adapter, what the song knows, which part of it: independent of one another
     # the home of the Rust extension (`_native._core`): it imports only `errors` (the bindings raise its errors), so
     # every layer above may use it
     "_native",

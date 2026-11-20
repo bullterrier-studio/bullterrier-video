@@ -2,6 +2,8 @@
 import only the layers below it:
 
     app        __main__ > cli
+    piece      the piece and its clips: where a caller builds a video
+    leaves     adapters, music, spans: independent of one another
     _native    the home of the Rust extension (`_native._core`); it imports only `errors` (the extension imports its
                `InvalidError` when it first raises one)
     errors     the exceptions; they import nothing from bullterrier_video, so every layer may raise them
@@ -26,7 +28,7 @@ PACKAGE = Path(bullterrier_video.__file__).parent
 ROOT = PACKAGE.parent.parent  # the repository: pyproject.toml holds the contracts
 LINT_IMPORTS = Path(sys.executable).with_name("lint-imports")  # `uv run lint-imports` from the repository root
 
-LAYERS = "Layers: __main__ > cli > _native > errors"
+LAYERS = "Layers: __main__ > cli > piece > adapters, music, spans > _native > errors"
 
 
 def lint(cwd: Path, pythonpath: Path | None = None) -> subprocess.CompletedProcess:
@@ -67,6 +69,23 @@ FORBIDDEN = {
         "bullterrier_video._native",
     ),
     "cli to main": ("cli.py", "import bullterrier_video.__main__", "bullterrier_video.cli"),
+    "piece to cli": ("piece.py", "import bullterrier_video.cli", "bullterrier_video.piece"),
+    "adapters to piece": ("adapters/audio.py", "import bullterrier_video.piece", "bullterrier_video.adapters.audio"),
+    "music to adapters, which are independent of it": (
+        "music.py",
+        "import bullterrier_video.adapters.audio",
+        "bullterrier_video.music",
+    ),
+    "spans to music, which is independent of it": (
+        "spans.py",
+        "import bullterrier_video.music",
+        "bullterrier_video.spans",
+    ),
+    "the Rust extension's home to piece": (
+        "_native/__init__.py",
+        "import bullterrier_video.piece",
+        "bullterrier_video._native",
+    ),
 }
 
 
@@ -80,6 +99,12 @@ def test_a_forbidden_import_breaks_its_contract(module, line, importer, tmp_path
 
 ALLOWED = {
     "cli to errors": ("cli.py", "import bullterrier_video.errors"),
+    "cli to piece": ("cli.py", "import bullterrier_video.piece"),
+    "piece to adapters": ("piece.py", "import bullterrier_video.adapters.audio"),
+    "piece to music": ("piece.py", "import bullterrier_video.music"),
+    "piece to spans": ("piece.py", "import bullterrier_video.spans"),
+    "adapters to errors": ("adapters/audio.py", "import bullterrier_video.errors"),
+    "music to the Rust extension": ("music.py", "from bullterrier_video._native import _core"),
     "cli to the Rust extension": ("cli.py", "from bullterrier_video._native import _core"),
     "the Rust extension's home to errors": ("_native/__init__.py", "import bullterrier_video.errors"),
 }
