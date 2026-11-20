@@ -6,4 +6,7 @@ mod common;
 
 mod architecture;
 mod ports;
+mod profile;
 mod scale;
+mod song;
+mod span;

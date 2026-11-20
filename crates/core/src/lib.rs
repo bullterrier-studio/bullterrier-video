@@ -8,9 +8,15 @@
 
 mod error;
 pub mod ports;
+mod profile;
 mod scaling;
+mod song;
+mod span;
 mod types;
 
 pub use error::Error;
+pub use profile::Profile;
 pub use scaling::scale;
+pub use song::{Levels, Song};
+pub use span::Span;
 pub use types::{Band, Frame, Hit, Kind, Moment, Parameter, Seconds, Section, Value, Values, View};

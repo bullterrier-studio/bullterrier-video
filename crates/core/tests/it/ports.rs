@@ -86,7 +86,7 @@ impl Music for Beat {
             label: "a".into(),
         }])
     }
-    fn band(&self, _band: Band) -> Result<(f64, Vec<f64>), Error> {
+    fn band(&self, _band: Band, _start: Seconds, _end: Seconds) -> Result<(f64, Vec<f64>), Error> {
         Ok((2.0, vec![0.0, 1.0, 0.0, 1.0]))
     }
 }
@@ -114,6 +114,9 @@ impl Sound for Silence {
         Ok(Box::new(Silence(end - start)))
     }
     fn fade(&self, _fade_in: Seconds, _fade_out: Seconds) -> Result<Box<dyn Sound>, Error> {
+        Ok(Box::new(Silence(self.0)))
+    }
+    fn normalised(&self, _lufs: f64) -> Result<Box<dyn Sound>, Error> {
         Ok(Box::new(Silence(self.0)))
     }
     #[expect(

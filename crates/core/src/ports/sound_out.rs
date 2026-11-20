@@ -27,6 +27,12 @@ pub trait Sound: Send + Sync {
     /// [`Error::Port`] when the fades are longer than the sound.
     fn fade(&self, fade_in: Seconds, fade_out: Seconds) -> Result<Box<dyn Sound>, Error>;
 
+    /// The sound at `lufs` integrated loudness.
+    ///
+    /// # Errors
+    /// [`Error::Port`] when the loudness cannot be measured (a silent sound).
+    fn normalised(&self, lufs: f64) -> Result<Box<dyn Sound>, Error>;
+
     /// The samples, interleaved by channel, between minus one and one.
     ///
     /// # Errors

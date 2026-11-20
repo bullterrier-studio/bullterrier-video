@@ -22,6 +22,11 @@ pub enum Error {
         /// Values given.
         len: usize,
     },
+    /// A piece, a clip or a mapping that cannot be rendered; `message` names the thing and the fix.
+    Invalid {
+        /// What is wrong and what to do.
+        message: String,
+    },
     /// A library behind a port refused or failed; `port` names the port and `message` is what the adapter says.
     Port {
         /// The port: `picture`, `signal`, `music`, `sound` or `encode`.
@@ -43,6 +48,7 @@ impl fmt::Display for Error {
                     width.saturating_mul(*height).saturating_mul(4)
                 )
             }
+            Self::Invalid { message } => write!(formatter, "{message}"),
             Self::Port { port, message } => write!(formatter, "{port}: {message}"),
         }
     }

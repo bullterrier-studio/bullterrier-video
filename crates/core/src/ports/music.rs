@@ -41,9 +41,10 @@ pub trait Music: Send + Sync {
     /// [`Error::Port`] when the music cannot be measured.
     fn sections(&self) -> Result<Vec<Section>, Error>;
 
-    /// The level of `band` as samples between zero and one at `rate` samples a second, scaled to the song's own range.
+    /// The level of `band` between `start` and `end` seconds as samples between zero and one at the returned rate (samples a
+    /// second), scaled by **that stretch's own range**: a clip measured alone, as a piece cut from a song is.
     ///
     /// # Errors
-    /// [`Error::Port`] when the music cannot be measured.
-    fn band(&self, band: Band) -> Result<(f64, Vec<f64>), Error>;
+    /// [`Error::Port`] when the music cannot be measured or the stretch is empty or outside the music.
+    fn band(&self, band: Band, start: Seconds, end: Seconds) -> Result<(f64, Vec<f64>), Error>;
 }
