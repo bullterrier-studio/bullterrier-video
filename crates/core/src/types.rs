@@ -67,6 +67,15 @@ pub enum Kind {
         unit: String,
         /// Whether a value outside the range wraps round (an angle) instead of stopping at the end.
         cyclic: bool,
+        /// Whether only whole numbers are taken (a value is rounded to the nearest).
+        integer: bool,
+    },
+    /// A colour, set as text (`#rrggbb`).
+    Color,
+    /// One of a fixed list, set as text.
+    Choice {
+        /// The names that are taken.
+        options: Vec<String>,
     },
     /// On or off.
     Bool,
@@ -74,6 +83,8 @@ pub enum Kind {
     Text,
     /// A picture filled in by a caller (a hole of a template).
     Picture,
+    /// A kind the library has that video neither sets nor maps (named by the library); an address of it is refused by name.
+    Other(String),
 }
 
 /// One value a picture takes, by the address of a [`Parameter`].
@@ -84,7 +95,7 @@ pub enum Value {
     Number(f64),
     /// On or off.
     Bool(bool),
-    /// Text.
+    /// Text: a text, a colour (`#rrggbb`) or a choice, whichever the parameter's [`Kind`] says.
     Text(String),
     /// A picture.
     Picture(Frame),

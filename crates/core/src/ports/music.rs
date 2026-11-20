@@ -15,10 +15,11 @@ pub trait Music: Send + Sync {
     /// [`Error::Port`] when the music cannot be measured.
     fn beats(&self) -> Result<Vec<Seconds>, Error>;
 
-    /// The first beat of each bar, rising; empty when the meter is not known.
+    /// The first beat of each bar, rising.
     ///
     /// # Errors
-    /// [`Error::Port`] when the music cannot be measured.
+    /// [`Error::Port`] when the music cannot be measured or its meter is not known: never an empty list that looks like a song
+    /// without bars.
     fn downbeats(&self) -> Result<Vec<Seconds>, Error>;
 
     /// Where the music pays off (a drop after a build), strongest first.

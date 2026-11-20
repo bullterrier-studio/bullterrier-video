@@ -317,7 +317,7 @@ ignore_names = []
 [tool.deptry]
 # check_release: tools/release.py imports its sibling script (a script's own folder is first on sys.path)
 known_first_party = ["bullterrier_video", "check_release"]
-
+extend_exclude = ["docs/examples"]  # programs against the sibling packages, which this environment does not declare
 [tool.deptry.per_rule_ignores]
 # packaging (PEP 440 versions) is used by tools/release.py, a developer command that runs in the dev environment
 DEP004 = ["packaging"]

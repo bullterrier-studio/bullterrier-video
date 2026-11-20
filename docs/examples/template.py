@@ -19,6 +19,6 @@ base.clip("post", post())
 variants = {}
 for row in csv.DictReader(open("posts.csv", encoding="utf-8")):  # slug, photo, title
     variants[row["slug"]] = base.copy()
-    variants[row["slug"]].clip("post").set({"photo.picture": imageio.load(row["photo"]), "title.text": row["title"]})
+    variants[row["slug"]]["post"].set({"photo.picture": imageio.load(row["photo"]), "title.text": row["title"]})
 
 btv.render_all(variants, folder="posts", workers=2)

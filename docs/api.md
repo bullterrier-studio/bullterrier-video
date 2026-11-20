@@ -15,7 +15,8 @@ Nothing else yet: the Python surface below is the contract the next batches buil
    A scene, a signal, a sound and an encoder are met through a trait of video's own (a *port*); one adapter per library. A
    sibling that changes or is replaced touches its adapter only. Video does not mirror a sibling's API.
 2. **Python objects are never serialised.** An adapter wraps any Python object that has the port's methods (duck typing), so an
-   in-memory picture or a callback works and scene's cache survives from frame to frame. Why, and the options weighed:
+   in-memory picture works and scene's cache survives from frame to frame; a picture that is not a scene is a small class with the
+   three methods below. Adapters video constructs itself (compose, encode) import their library. Why, and the options weighed:
    [design-decisions.md](design-decisions.md).
 3. **Time is seconds.** Frames exist inside a render only. Musical time is a number of seconds read from the song (`m.drop`,
    `m.downbeats`), so it composes with every other signal.
@@ -36,10 +37,11 @@ piece.render("mill.mp4")
 | Call | Does |
 |---|---|
 | `Piece(profile, *, loop=False)` | an empty piece; `duration` is the soundtrack's span (or the clips' end) |
+| `Piece[name] -> Clip` | the clip of that name, to `set`, `map` or `swap` it |
 | `Piece.clip(name, source, start=0.0, end=None, *, track=0, fill=None) -> Clip` | puts a picture on the timeline; `source` is a Picture (a scene, a drawing, anything with the port's methods) or a `Footage`; `fill={address: value}` sets holes, a `Footage` value giving a new frame each time |
-| `Piece.song(sound, span, *, fade_in=0.0, fade_out=0.0) -> Music` | cuts the sound to `span`, fades it, puts it under the piece, returns what it knows in the piece's own time |
+| `Piece.song(sound, span, *, fade_in=0.0, fade_out=0.0) -> Music` | cuts the sound to `span`, fades it, puts it under the piece, returns what it knows in the piece's own time; once: a second call is an `InvalidError` (a timing variant builds the piece again) |
 | `Piece.transition(a, b, at, length, kind=Cut())` | from clip `a` to clip `b`, centred on `at`; `kind`: `Cut`, `Dissolve`, `Sweep("light" or "dark", angle=0)` |
-| `Piece.camera(dx=None, dy=None, zoom=None, rotate=None)` | one transform over the whole composition; each a signal (`dx`, `dy` as fractions of the long side, `zoom` one for none, `rotate` degrees) |
+| `Piece.camera(dx=None, dy=None, zoom=None, rotate=None)` | one transform over the finished composition; each a signal (`dx`, `dy` as fractions of the long side, `zoom` one for none, `rotate` degrees). The finished frame is moved once by the Compose port, so no layer is drawn again and scene's cache holds; the price is one resample of the frame |
 | `Piece.render(path, *, workers=None)` | the file; frames in parallel; the container from the extension |
 | `Piece.frame(t, long_side) -> ndarray` | one moment, float32 RGBA |
 | `Piece.sheet(path, at, width)` | a contact sheet of chosen moments, each `width` pixels along its long side, in seconds |
@@ -49,13 +51,16 @@ piece.render("mill.mp4")
 | `Clip.set(values)` | constants by address (numbers, text, colours, pictures); the picture's own values until then |
 | `Clip.swap(picture)` | another picture in the clip, mappings kept where its addresses exist |
 
-**Music** (`Piece.song` returns it; every time is in piece seconds, so a clip's `start` can be `m.drop - 1.0`):
-`duration`, `tempo` (beats a minute), `beats`, `downbeats`, `drop` (the strongest, or `None`), `kicks`, `snares`, `hats`,
-`sections` (each `start`, `end`, `label`), `band(name, *, over=None)` (a signal between 0 and 1; `over=(a, b)` scales it to
-the song's range inside that span, as the mill needs for the bass after the drop), `after(t)` (a signal: 0 before `t`, 1 from it).
+**Music** (`Piece.song` returns it; every time is in piece seconds, so a clip's `start` can be `m.drop - 1.0`): `duration`, `tempo`
+(beats a minute), `beats`, `downbeats`, `drop`, `kicks`, `snares`, `hats`, `sections` (each `start`, `end`, `label`), `band(name,
+*, over=None) -> Levels`. It is **plain data**, never control's types: `Levels` is `values`, `rate` and `start`, and the caller makes a
+signal with `btc.from_values(lv.values, lv.rate, start=lv.start)`. `band(..., over=(a, b))` scales the levels to the song's range
+inside that span, as the mill needs for the bass after the drop. A measure the song cannot give raises `InvalidError` naming it:
+`drop` when there is no drop, `downbeats` when the meter is unknown, the hits when no drum part can be found. Never an empty list
+that looks like silence.
 
 **Spans** choose the soundtrack from the song: `around_drop(before, length)`, `bars(n)` (from the first downbeat, so a loop
-closes on the beat), `whole()`, `between(start, end)`, `loudest(band, length)`.
+closes on the beat; an unknown meter raises), `whole()`, `between(start, end)`, `loudest(band, length)`.
 
 **Profile:** `Profile.vertical(width, fps)` (9:16, safe area 12 to 80 percent of the height), `.landscape`, `.square`; fields
 `width`, `height`, `fps`, `depth` (8 or 10 bit), `codec`, `loudness` (LUFS, delivery default), `safe`. The scene's own `fit` and
@@ -69,7 +74,8 @@ picture hole. Waits for the decode port.
 `clip.map(address, signal, lag=0.0)` sets the value at `address` to the signal's value at `t - lag` (a negative lag leads) for
 every frame of the clip.
 
-- The address is the picture's own, as `scene.parameters()` lists it (`logo.drawing.ring_on`).
+- The address is the picture's own, as `scene.parameters()` lists it (`logo.drawing.ring_on`). A number, an integer (rounded) and
+  a bool take a mapped signal; a colour, a choice, a text and a picture are `set`.
 - The value is held to the described range; a **cyclic** parameter wraps into it instead (an angle of 360 reads as 0); a pixel
   value is read at the picture's own design size, so a preview and a final render agree.
 - A signal is control's (or anything with `sample(times)`); signals add, subtract and multiply with numbers and each other, so a
@@ -77,6 +83,7 @@ every frame of the clip.
 - Refused, naming the address: one that the picture does not have (with the nearest names), a text or picture parameter
   (those are `set`), an address mapped twice or both mapped and set.
 - A clip may be drawn outside its own span (a transition needs both pictures); its signals are total, so this is safe.
+- A moment no clip covers is black. Cover the piece (the last clip to `m.duration`); a gap longer than a frame is reported at render.
 
 ## Soundtrack
 
@@ -99,11 +106,12 @@ name no sibling's type.
 
 | Port | Promises | First adapter | Needed by |
 |---|---|---|---|
-| `Picture` | `parameters()` and `render(values, view, long_side)`: **one long-lived instance, rendered with new values each frame**, so its cache is kept | scene | slice 1 |
+| `Picture` | `parameters()` and `render(values, long_side)`: **one long-lived instance, rendered with new values each frame**, so its cache is kept | scene | slice 1 |
+| `Compose` | `compose(layers)`: frames, each with a placement (a `View`), opacity, blend and mask, into one frame of the ground's size: tracks, transitions, the camera | scene (its layers take a frame as a picture) | slice 1 (the camera) |
 | `Signal` | `sample(times)`: a value at any time, many times in one call | control | slice 1 |
-| `Music` | duration, beats, downbeats, drops, hits, sections, `band`: times in seconds and levels | audio | slice 1 |
+| `Music` | duration, beats, downbeats, drops, hits, sections, `band`: times in seconds and levels; an unknown measure is an error, never an empty list | audio | slice 1 |
 | `Sound` | rate, channels, duration, `cut`, `fade`, `samples`: one sound edited at a time | audio | slice 1 |
-| `Encode` | `encode(job, frames)`: a stream of frames and the soundtrack into one file | ffmpeg | slice 1 |
+| `Encode` | `encode(job, frames)`: a stream of frames and the soundtrack into one file, at a rate, codec and bit depth | ffmpeg | slice 1 |
 | Decode (sketch) | frames of a clip at times, with its audio | ffmpeg | footage |
 | Footage maps (sketch) | a matte and a depth map per frame, steady over time | models | footage analysis |
 
@@ -111,17 +119,16 @@ name no sibling's type.
 
 | Port | Methods of the Python object |
 |---|---|
-| Picture | `parameters()` (items with `address`, `kind`, `meaning`, `unit`, `min`, `max`, `cyclic`), `with_values(mapping)` returning a picture that shares the cache, `render(size)` returning float32 `(h, w, 4)`, straight alpha. A scene is this shape; a caller's own picture implements the three |
+| Picture | `parameters()` (a mapping from address to an item with `kind`, `meaning`, `unit`, `min`, `max`, `cyclic`: scene's `dict[str, Parameter]`), `with_values(mapping)` returning a picture that shares the cache, `render(size)` returning float32 `(h, w, 4)`, straight alpha. A scene is this shape; a caller's own picture implements the three |
 | Signal | `sample(times)` returning an array |
 | Music and Sound | an audio `Sound` (measures and edits are one object in audio; two ports in video, so a replacement may supply either) |
 
-**View (the camera).** `Picture::render` takes a `View`; the scene adapter makes it by drawing the scene as a group layer of a
-wrapper scene (scene's `Layer.scene`), which costs no resampling of the finished frame. A picture that cannot take a view has
-the frame moved afterward by the adapter. Proven with the first piece.
-
-**Transitions** are described by video (kind, `at`, `length`) and realised through the picture port: both clips are drawn and
-combined with a moving mask (and, for a sweep, a light layer) inside a wrapper scene. Proven with the first piece that uses one; if it needs a call scene
-does not have, that is a request to scene.
+**Camera, tracks and transitions go through `Compose`.** Video draws each clip with the Picture port, then stacks the frames: a
+title is a layer on a second track; a transition is the outgoing frame, the incoming frame with a **mask video generates** (a
+soft gradient edge at an angle, moved by the transition's progress), and for a sweep a white layer under `Screen` with the same
+mask; the camera is the finished frame placed by one `View`. Video makes the masks (they are arithmetic on its own `Frame`); scene
+does the blend and the placement. The scene adapter is the one that builds layers, so it imports scene (its Python adapter,
+lazily) and it is not duck-typed.
 
 ## Dependencies
 

@@ -21,3 +21,10 @@ parallel threads, and a sibling that does not release it would need processes. A
 **The core crate depends on no sibling.** Adapters for Rust callers are separate crates, so a sibling's pin never constrains the core.
 The picture port is one long-lived instance rendered with new values each frame: scene's cache is worth 0.19 s a frame against 0.95 s
 without, and a port that rebuilt per frame would throw it away.
+
+**A compose port, and music as plain data (2026-11-20).** Tracks, transitions and the camera put finished frames together, which is
+scene's job (layers, masks, blends), not the picture port's and not video's own pixel code: so `Compose` takes frames with a
+placement, opacity, blend and mask, and the picture port has no view. Video makes the transition masks (arithmetic on its own
+`Frame`). The camera moves the finished frame, so no layer is drawn again and scene's cache holds. Music returns times and
+levels, not signals: a signal video made would be control's type in video's own return values, and control's functions take
+only control's signals, so the caller makes them from the levels.

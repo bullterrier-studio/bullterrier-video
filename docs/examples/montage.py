@@ -14,7 +14,7 @@ m = piece.song(bta.load("track.wav"), span=btv.around_drop(before=8.0, length=24
 
 paths = ["a.mp4", "b.mp4", "c.mp4"]
 look = bts.Scene(1080, 1920).add(bts.Layer.picture(None).named("shot").fit((0, 0, 1080, 1920), "cover"))  # a hole for the frame
-cuts = m.downbeats[::2]  # every second bar
+cuts = [0.0, *m.downbeats[::2][1:], m.duration]  # every second bar, from the start to the end: no gap
 clips = [
     piece.clip(f"cut{i}", look, start=a, end=b, fill={"shot.picture": btv.Footage(paths[i % 3], start=2.0 * i)})
     for i, (a, b) in enumerate(zip(cuts, cuts[1:]))
@@ -22,7 +22,7 @@ clips = [
 for a, b, t in zip(clips, clips[1:], cuts[1:]):
     piece.transition(a, b, at=t, length=0.25, kind=btv.Sweep("light", angle=90))
 
-headline = bts.Layer.text("AFTER HOURS", size=140).named("headline")
+headline = bts.Layer.text("AFTER HOURS", font="bricolage_grotesque", size=140).named("headline")
 title = piece.clip("title", bts.Scene(1080, 1920).add(headline), start=m.drop, end=m.drop + 3, track=1)  # a second track, over the cuts
 title.map("headline.opacity", lib.keyframes(points=[Keyframe(t=m.drop, value=0), Keyframe(t=m.drop + 0.2, value=1), Keyframe(t=m.drop + 2.5, value=1), Keyframe(t=m.drop + 3, value=0)]))
 piece.render("clip.mp4")

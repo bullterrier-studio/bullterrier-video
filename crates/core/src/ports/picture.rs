@@ -1,7 +1,7 @@
 //! The picture port: what video needs of whatever draws one frame.
 
 use crate::error::Error;
-use crate::types::{Frame, Parameter, Values, View};
+use crate::types::{Frame, Parameter, Values};
 
 /// Something that draws one picture for given values: a scene, a drawing, a caller's function.
 ///
@@ -16,11 +16,11 @@ pub trait Picture: Send + Sync {
     /// [`Error::Port`] when the picture cannot describe itself.
     fn parameters(&self) -> Result<Vec<Parameter>, Error>;
 
-    /// The frame for `values` (an address not set keeps the picture's own value), seen through `view`, whose long side is
-    /// `long_side` pixels. Values are in each parameter's own unit; a pixel unit is read at the picture's own design size, so
+    /// The frame for `values` (an address not set keeps the picture's own value), whose long side is `long_side` pixels. A
+    /// camera is not the picture's business: the finished frame goes through the [`Compose`](super::Compose) port. Values are in each parameter's own unit; a pixel unit is read at the picture's own design size, so
     /// the same values at another `long_side` give the same picture, only sharper.
     ///
     /// # Errors
     /// [`Error::Port`] when the picture refuses a value or cannot draw.
-    fn render(&self, values: &Values, view: View, long_side: u32) -> Result<Frame, Error>;
+    fn render(&self, values: &Values, long_side: u32) -> Result<Frame, Error>;
 }

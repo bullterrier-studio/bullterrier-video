@@ -5,13 +5,17 @@ use std::path::Path;
 use crate::error::Error;
 use crate::types::Frame;
 
-/// What to write: the shape of the picture, its rate, the file and the soundtrack's loudness.
+/// What to write: the file, its rate and codec, and the soundtrack. The soundtrack's loudness is set by video before it gets here.
 #[derive(Debug, Clone, PartialEq)]
 pub struct Job<'a> {
     /// Where the file goes; its extension picks the container (`mp4`, `gif`, ...).
     pub path: &'a Path,
     /// Frames a second.
     pub fps: f64,
+    /// Bits a colour channel is written with, 8 or 10.
+    pub depth: u8,
+    /// The codec by name (`h264`, ...); the encoder refuses one it does not have.
+    pub codec: &'a str,
     /// Samples of the soundtrack, interleaved, with its rate and channel count; `None` for a silent file.
     pub audio: Option<Audio<'a>>,
 }
