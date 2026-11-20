@@ -6,6 +6,7 @@
 
 #![forbid(unsafe_code)]
 
+mod clip;
 mod error;
 pub mod ports;
 mod profile;
@@ -14,6 +15,7 @@ mod song;
 mod span;
 mod types;
 
+pub use clip::Clip;
 pub use error::Error;
 pub use profile::Profile;
 pub use scaling::scale;

@@ -2,18 +2,19 @@
 //! touches its adapter only.
 
 use std::collections::BTreeMap;
+use std::sync::Arc;
 
 use crate::error::Error;
 
 /// Time in seconds, everywhere. Frames exist only in the piece's own clock; a port never sees a frame number.
 pub type Seconds = f64;
 
-/// One rendered picture: float32 RGBA, straight alpha, rows from the top, `width * height * 4` values.
+/// One rendered picture: float32 RGBA, straight alpha, rows from the top, `width * height * 4` values. Cloning shares the pixels.
 #[derive(Debug, Clone, PartialEq)]
 pub struct Frame {
     width: usize,
     height: usize,
-    pixels: Vec<f32>,
+    pixels: Arc<[f32]>,
 }
 
 impl Frame {
@@ -30,7 +31,11 @@ impl Frame {
                 len: pixels.len(),
             });
         }
-        Ok(Self { width, height, pixels })
+        Ok(Self {
+            width,
+            height,
+            pixels: pixels.into(),
+        })
     }
 
     /// Columns.

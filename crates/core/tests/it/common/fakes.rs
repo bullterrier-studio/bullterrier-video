@@ -5,10 +5,10 @@
     reason = "the fakes hold small positive numbers"
 )]
 
-use std::sync::Mutex;
+use std::sync::{Arc, Mutex};
 
-use bullterrier_video::ports::{Music, Sound};
-use bullterrier_video::{Band, Error, Hit, Moment, Seconds, Section};
+use bullterrier_video::ports::{Music, Picture, Signal, Sound};
+use bullterrier_video::{Band, Error, Frame, Hit, Kind, Moment, Parameter, Seconds, Section, Values};
 
 /// A song with programmed measures. `levels` is one band at `rate` samples a second for every band.
 pub(crate) struct FakeMusic {
@@ -136,4 +136,53 @@ impl Sound for FakeSound {
             self.lufs.map_or(-1.0, |l| l as f32),
         ])
     }
+}
+
+/// A picture that describes itself and draws nothing: enough for what a clip checks.
+pub(crate) struct Described(pub(crate) Vec<Parameter>);
+
+impl Picture for Described {
+    fn parameters(&self) -> Result<Vec<Parameter>, Error> {
+        Ok(self.0.clone())
+    }
+    fn render(&self, _values: &Values, _long_side: u32) -> Result<Frame, Error> {
+        Err(Error::Port {
+            port: "picture",
+            message: "draws nothing".into(),
+        })
+    }
+}
+
+/// A parameter of a picture, with no meaning written.
+pub(crate) fn parameter(address: &str, kind: Kind) -> Parameter {
+    Parameter {
+        address: address.into(),
+        meaning: String::new(),
+        kind,
+    }
+}
+
+/// A number from `min` to `max`.
+pub(crate) fn number(min: f64, max: f64, cyclic: bool, integer: bool) -> Kind {
+    Kind::Number {
+        min,
+        max,
+        unit: String::new(),
+        cyclic,
+        integer,
+    }
+}
+
+/// A signal given by a function of the time.
+pub(crate) struct FnSignal(pub(crate) Box<dyn Fn(Seconds) -> f64 + Send + Sync>);
+
+impl Signal for FnSignal {
+    fn sample(&self, times: &[Seconds]) -> Result<Vec<f64>, Error> {
+        Ok(times.iter().map(|&t| (self.0)(t)).collect())
+    }
+}
+
+/// A signal that is `value` at every time.
+pub(crate) fn constant(value: f64) -> Arc<dyn Signal> {
+    Arc::new(FnSignal(Box::new(move |_| value)))
 }
