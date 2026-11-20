@@ -69,3 +69,14 @@ numpy is a runtime dependency of the package and of the bindings crate (`deny.to
 levels cross as arrays, and every sibling library uses it. The core names no numpy. The audio library is reached only through
 `bullterrier_video.adapters.audio`, which is imported lazily and returns plain lists and arrays, so the core never learns a
 sibling's method names, enums or array layout (audio gives one row a channel; the adapter interleaves).
+
+## Contact sheets and batches (2026-11-20)
+
+A sheet asks each picture to draw its moment at the cell size (`render(values, width)`), rather than shrinking a full frame, so it
+costs a few small frames (five moments of the mill in 0.1 to 0.3 s against 38 s for the render) and the picture's own design-size
+rules still hold. Cells are tiled in one row with `SHEET_GAP` pixels of dark grey between, cells must agree in size, and a moment no
+clip draws is a black cell of their size. The adapter asks for even sides only of video (4:2:0 needs them), not of a picture or a
+gif: a 135-pixel cell is normal. `render_all` is a plain loop in the package, one piece after another with all the workers (a piece
+already uses every core), not a scheduler. A timing variant is the piece built again, because its mappings hold the song's moments;
+so a piece's choreography is best written relative to the drop (the mill's intro scales with the build length), or the keyframes of a
+shorter build run backwards, which the demo's first timing variant showed.

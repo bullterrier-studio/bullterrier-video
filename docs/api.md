@@ -9,9 +9,9 @@ lines of choreography.
 The examples show the whole designed surface, including what is still planned; the built part is `examples/mill.py`'s calls.
 
 **What is built:** the ports and video's own types; the core (profile, spans, a song in piece time, clips with their mappings, the
-piece and its parallel frame loop, the ffmpeg adapter); the Python package (`Piece`, `Clip`, `Profile`, spans, `Music`, `Levels`,
-the audio adapter) and the mill piece on it. **Planned, not in the signatures yet:** `track`, `fill`, `transition`, `camera`,
-`Footage`, `loop`, `sheet`, `render_all` (marked *planned* below); each arrives with the batch that needs it.
+piece and its parallel frame loop, contact sheets, the ffmpeg adapter); the Python package (`Piece`, `Clip`, `Profile`, spans, `Music`,
+`Levels`, `render_all`, the audio adapter), the mill piece and its variants on it. **Planned, not in the signatures yet:** `track`,
+`fill`, `transition`, `camera`, `Footage`, `loop` (marked *planned* below); each arrives with the batch that needs it.
 
 ## Principles
 
@@ -48,9 +48,9 @@ piece.render("mill.mp4")
 | *Planned:* `Piece.camera(dx=None, dy=None, zoom=None, rotate=None)` | one transform over the finished composition; each a signal (`dx`, `dy` as fractions of the long side, `zoom` one for none, `rotate` degrees). The finished frame is moved once by the Compose port, so no layer is drawn again and scene's cache holds; the price is one resample of the frame |
 | `Piece.render(path, *, workers=None)` | the file (mp4, mov, gif or png by its extension) through ffmpeg; frames drawn on `workers` threads (`DEFAULT_WORKERS`) and handed over in order, so the file does not depend on the number; written under a temporary name and renamed when ffmpeg succeeded |
 | `Piece.frame(t) -> ndarray` | one moment at the profile's size, float32 RGBA straight alpha |
-| *Planned:* `Piece.sheet(path, at, width)` | a contact sheet of chosen moments, each `width` pixels along its long side, in seconds |
+| `Piece.sheet(path, at, width=240)` | a contact sheet (png) of chosen moments side by side, each cell drawn `width` pixels along its long side by the picture itself, so it takes a few frames' time, not a render's; a moment no clip draws is a black cell |
 | `Piece.copy()` | an independent piece sharing the pictures and their caches |
-| *Planned:* `render_all(pieces, folder, *, workers=None)` | one file per entry of a mapping name to piece, sharing one worker budget |
+| `render_all(pieces, folder, *, workers=None, extension="mp4")` | one file `<name>.<extension>` per entry of a mapping name to piece, one after another, each with all the workers; a piece that fails stops the run and its error names it |
 | `Clip.map(address, signal, *, lag=0.0)` | see "Mapping" |
 | `Clip.set(values)` | constants by address (numbers, text, colours, pictures); the picture's own values until then |
 | `Clip.swap(picture)` | another picture in the clip; refused, naming the address, if it lacks one that is set or mapped (nothing changes then) |
