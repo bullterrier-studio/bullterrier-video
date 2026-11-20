@@ -215,6 +215,9 @@ filterwarnings = ["error"]
 line-length = 120
 target-version = "py312"
 src = ["src", "tests"]
+# docs/examples are programs written against the sibling packages, which this environment does not declare: not linted or run
+extend-exclude = ["docs/examples"]
+force-exclude = true  # the commit hook passes files by name, which skips an exclude
 
 [tool.ruff.lint]
 # Preview for the linter only (the formatter keeps its stable style), and only for the preview rules listed by code

@@ -31,9 +31,10 @@ uv run poe full                      # `check` and the gate proofs: before a tag
 | change a gate | `pyproject.toml` (Python tools, poe tasks), `Cargo.toml` (Rust lints, tool pins); a proof in `tests/tools/` (the template's shared gates all have one; for your own it is recommended) |
 | keep files identical across projects | `docs/shared-files.md` |
 
-**State:** scaffold only (template v0.5.1). The template's `scale(value, factor)` is a placeholder in the core, the extension, the
-package and the command `bt-video scale`, until the first feature replaces it; keep the layout, the gates and the tests that prove them.
-No sibling package is a dependency yet.
+**State:** the API is designed (`docs/api.md`, `docs/examples/`) and the ports and video's own types are built (`crates/core/src/ports/`,
+`types.rs`, tested with fakes); nothing else yet. The template's `scale(value, factor)` is still a placeholder in the core, the
+extension, the package and the command `bt-video scale`, until the first feature replaces it; keep the layout, the gates and the tests
+that prove them. No sibling package is a dependency: the core names none, an adapter does.
 
 ## Responsibility
 
