@@ -6,6 +6,7 @@ mod common;
 
 mod architecture;
 mod clip;
+mod piece;
 mod ports;
 mod profile;
 mod scale;

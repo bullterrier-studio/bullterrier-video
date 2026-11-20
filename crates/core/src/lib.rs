@@ -8,6 +8,7 @@
 
 mod clip;
 mod error;
+mod piece;
 pub mod ports;
 mod profile;
 mod scaling;
@@ -17,6 +18,7 @@ mod types;
 
 pub use clip::Clip;
 pub use error::Error;
+pub use piece::{FRAMES_AHEAD_PER_WORKER, Piece};
 pub use profile::Profile;
 pub use scaling::scale;
 pub use song::{Levels, Song};
