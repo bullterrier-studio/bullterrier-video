@@ -1,7 +1,8 @@
 # CLAUDE.md: bullterrier-video
 
-Template for Rust-first projects with a Python interface (PyO3, maturin): a pure-Rust core, bindings, a Python package, a command
-line, and every gate green on the empty project. `README.md` (use), `docs/design-decisions.md` and `docs/template-decisions.md` (why), `docs/shared-files.md` (what
+A Rust library (crate `bullterrier-video`) with a Python interface that decides what happens when and what drives what in a
+video, then renders it: a piece over time, signals mapped onto the values of a picture, the soundtrack, frames, encoding. **The code
+API is the product.** `README.md` (use), `docs/design-decisions.md` and `docs/template-decisions.md` (why), `docs/shared-files.md` (what
 stays identical across projects), `docs/releasing.md` (CI and releases).
 
 **Write docs terse.** This file, the README, `docs/`, docstrings, reports and briefs: state the rule or fact, drop preamble,
@@ -30,9 +31,22 @@ uv run poe full                      # `check` and the gate proofs: before a tag
 | change a gate | `pyproject.toml` (Python tools, poe tasks), `Cargo.toml` (Rust lints, tool pins); a proof in `tests/tools/` (the template's shared gates all have one; for your own it is recommended) |
 | keep files identical across projects | `docs/shared-files.md` |
 
-**State:** one feature end to end: `scale(value, factor)` in the core (`crates/core`), the extension (`crates/python`), the package
-(`src/bullterrier_video`) and the command `bt-video scale`, each layer tested. Replace it with the project's own; keep the layout, the gates
-and the tests that prove them.
+**State:** scaffold only (template v0.5.1). The template's `scale(value, factor)` is a placeholder in the core, the extension, the
+package and the command `bt-video scale`, until the first feature replaces it; keep the layout, the gates and the tests that prove them.
+No sibling package is a dependency yet.
+
+## Responsibility
+
+`bullterrier-video` is the **video package** of the Bullterrier ecosystem: the one package with time and frames. It meets each
+library it uses through a narrow contract of its own (a port) with one adapter per library, so a library that changes or is
+replaced touches only its adapter.
+
+| Responsible for | Not responsible for |
+|---|---|
+| The piece over time: timeline, clips, transitions, camera, musical time (beats, bars, drops) | Composing one picture from layers → scene |
+| Mappings: a signal drives a value within its described range | Producing and shaping signals → control |
+| The soundtrack: its span, mixing, sync; frames, decoding, encoding, output profiles | Measuring and editing one sound → audio |
+| Effects over several frames; footage analysis over time | Single-picture effects and finders → image; shapes and type → vector |
 
 ## Names
 
