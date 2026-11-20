@@ -1,0 +1,23 @@
+[package]
+name = "bullterrier-video-python"
+description = "The Python bindings of bullterrier-video's Rust core: builds the extension `bullterrier_video._native._core`."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+publish.workspace = true
+
+[lib]
+name = "_core"
+crate-type = ["cdylib"]
+# no Rust tests of its own: the Python suite tests the extension through the package's public interface
+test = false
+doctest = false
+
+[dependencies]
+bullterrier-video.workspace = true
+pyo3.workspace = true
+
+[lints]
+workspace = true

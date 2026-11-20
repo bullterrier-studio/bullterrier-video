@@ -1,0 +1,14 @@
+# Changes here will be overwritten by Copier; `copier update` reads this file. Commit it.
+_commit: v0.5.1
+_src_path: gh:jcakstins/rust-project-template
+author: Janis Cakstins
+author_email: janis.cakstins@gmail.com
+concept: video
+description: Decides what happens when and what drives what, then renders it.
+family: bullterrier
+min_deps: true
+owner: bullterrier-studio
+release: true
+rust: true
+short: bt
+wasm: false
