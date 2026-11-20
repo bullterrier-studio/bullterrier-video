@@ -7,7 +7,10 @@
 #![forbid(unsafe_code)]
 
 mod error;
+pub mod ports;
 mod scaling;
+mod types;
 
 pub use error::Error;
 pub use scaling::scale;
+pub use types::{Band, Frame, Hit, Kind, Moment, Parameter, Seconds, Section, Value, Values, View};

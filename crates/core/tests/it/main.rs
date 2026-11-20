@@ -5,4 +5,5 @@
 mod common;
 
 mod architecture;
+mod ports;
 mod scale;
