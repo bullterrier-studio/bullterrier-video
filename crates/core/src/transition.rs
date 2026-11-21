@@ -84,18 +84,30 @@ pub(crate) fn sweep_masks(
     // the half extent of the frame along the direction, in long sides: the edge starts and ends just outside it
     let reach = (w * dx.abs() + h * dy.abs()) / 2.0 / long;
     let edge = -reach - feather / 2.0 + progress * (2.0 * reach + feather);
+    // a pixel's distance along the direction is the sum of its column's and its row's share: both made once, in single
+    // precision for the loop over every pixel
+    #[expect(
+        clippy::cast_precision_loss,
+        clippy::cast_possible_truncation,
+        reason = "a side is far below 2^24"
+    )]
+    let (columns, rows): (Vec<f32>, Vec<f32>) = (
+        (0..width)
+            .map(|c| ((c as f64 + 0.5 - w / 2.0) * dx / long) as f32)
+            .collect(),
+        (0..height)
+            .map(|r| ((r as f64 + 0.5 - h / 2.0) * dy / long) as f32)
+            .collect(),
+    );
+    #[expect(clippy::cast_possible_truncation, reason = "single precision is enough for a mask")]
+    let (edge, feather) = (edge as f32, feather as f32);
     let mut shown = Vec::with_capacity(width * height * 4);
     let mut bar = Vec::with_capacity(width * height * 4);
-    for row in 0..height {
-        #[expect(clippy::cast_precision_loss, reason = "a side is far below 2^52")]
-        let y = (row as f64 + 0.5 - h / 2.0) * dy;
-        for column in 0..width {
-            #[expect(clippy::cast_precision_loss, reason = "a side is far below 2^52")]
-            let s = ((column as f64 + 0.5 - w / 2.0) * dx + y) / long;
-            let u = ((edge - s) / feather + 0.5).clamp(0.0, 1.0);
+    for row in &rows {
+        for column in &columns {
+            let u = ((edge - (column + row)) / feather + 0.5).clamp(0.0, 1.0);
             let m = u * u * (3.0 - 2.0 * u);
-            #[expect(clippy::cast_possible_truncation, reason = "a mask value is 0 to 1")]
-            let (m, b) = (m as f32, (1.0 - (2.0 * m - 1.0).abs()) as f32);
+            let b = 1.0 - (2.0 * m - 1.0).abs();
             shown.extend_from_slice(&[m, m, m, 1.0]);
             bar.extend_from_slice(&[b, b, b, 1.0]);
         }
