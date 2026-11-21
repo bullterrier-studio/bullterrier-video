@@ -281,10 +281,13 @@ impl Piece {
 
 #[pymethods]
 impl Piece {
-    /// An empty piece with `profile`.
+    /// An empty piece with `profile`; `looped` makes its clock a circle (checked when it renders).
     #[new]
-    fn new(profile: &Profile) -> Self {
-        Self(Mutex::new(core::Piece::new(profile.0.clone())))
+    #[pyo3(signature = (profile, looped=false))]
+    fn new(profile: &Profile, looped: bool) -> Self {
+        let mut piece = core::Piece::new(profile.0.clone());
+        piece.set_looped(looped);
+        Self(Mutex::new(piece))
     }
 
     /// An independent piece that shares the pictures, signals and song.

@@ -741,3 +741,30 @@ def test_a_mapped_colour_changes_a_scenes_lit_pixels_across_frames():
     frames = np.stack([piece.frame(i / 4.0) for i in range(4)])
     red_over_blue = (frames[..., 0] - frames[..., 2]).mean(axis=(1, 2))
     assert np.all(np.diff(red_over_blue) > 1e-4), f"the lamp turns from blue to red: {red_over_blue}"
+
+
+def test_a_looped_piece_renders_when_every_mapping_closes_and_names_the_one_that_does_not(ffmpeg: Path, tmp_path: Path):
+    piece = btv.Piece(btv.Profile(WIDTH, HEIGHT, 4.0), loop=True)
+    piece.clip("a", FakeScene(), end=1.0)
+    piece["a"].map("angle", lambda times: times * 360.0)  # 0 at the start, 360 (= 0) at the end of the one second
+    assert piece.render(tmp_path / "loop.mp4").frames == 4
+    piece["a"].map("level", Time())
+    with pytest.raises(InvalidError, match=r"`level` of clip `a` is 0 at 0 s and 1 at 1 s"):
+        piece.render(tmp_path / "loop2.mp4")
+
+
+def test_a_draft_and_a_copy_of_a_looped_piece_stay_looped(ffmpeg: Path, tmp_path: Path):
+    piece = btv.Piece(btv.Profile(WIDTH, HEIGHT, 4.0), loop=True)
+    piece.clip("a", FakeScene(), end=1.0)
+    piece["a"].map("level", Time())
+    for variant in (piece.copy(), piece.draft(1.0)):
+        with pytest.raises(InvalidError, match="does not close"):
+            variant.render(tmp_path / "x.mp4")
+
+
+def test_a_looped_piece_with_two_clips_is_refused(ffmpeg: Path, tmp_path: Path):
+    piece = btv.Piece(btv.Profile(WIDTH, HEIGHT, 4.0), loop=True)
+    piece.clip("a", FakeScene(), end=1.0)
+    piece.clip("b", FakeScene(), start=1.0, end=2.0)
+    with pytest.raises(InvalidError, match="one clip"):
+        piece.render(tmp_path / "x.mp4")

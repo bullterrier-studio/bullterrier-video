@@ -11,7 +11,7 @@ The examples show the whole designed surface, including what is still planned; t
 **What is built:** the ports and video's own types; the core (profile, spans, a song in piece time, clips with their mappings, the
 piece and its parallel frame loop, contact sheets, the camera and transitions, the ffmpeg adapter); the Python package (`Piece`, `Clip`, `Ramp`, `Profile`, spans, `Music`,
 `Levels`, `render_all`, `Cut`, `Dissolve`, `Sweep`, the audio and scene compose adapters), the mill piece and its variants on it. **Planned, not in the signatures yet:** `track`,
-`fill`, `Footage`, `loop` (marked *planned* below); each arrives with the batch that needs it.
+`fill`, `Footage` (marked *planned* below); each arrives with the batch that needs it.
 
 ## Principles
 
@@ -40,7 +40,7 @@ piece.render("mill.mp4")
 
 | Call | Does |
 |---|---|
-| `Piece(profile)` | an empty piece; `duration` is the soundtrack's span (or the clips' end); `loop=` is *planned* |
+| `Piece(profile, *, loop=False)` | an empty piece; `duration` is the soundtrack's span (or the clips' end). `loop=True` makes the clock a circle: `render` is refused (`InvalidError`), before any frame is drawn, for more than one clip (so no transition), a song fade above zero, or a mapping or camera signal whose value at 0 s differs from its value at `duration` by more than `SEAM_TOLERANCE` (1e-6); the error names the clip, the address and both values. A cyclic address closes at its wrap (360 is 0). Use a span of whole bars (`bars(n)`) so the sound closes too. `copy` and `draft` keep `loop` |
 | `Piece[name] -> Clip` | the clip of that name, to `set`, `map` or `swap` it |
 | `Piece.clip(name, source, start=0.0, end=None) -> Clip` | puts a picture on the timeline (a cut from one clip to the next; overlap is refused); `source` is a scene or anything with the Picture port's methods. *Planned:* `track=`, a `Footage` source, `fill=` |
 | `Piece.song(sound, span, *, fade_in=0.0, fade_out=0.0) -> Music` | cuts the sound to `span`, fades it, puts it under the piece, returns what it knows in the piece's own time; once: a second call is an `InvalidError` (a timing variant builds the piece again) |

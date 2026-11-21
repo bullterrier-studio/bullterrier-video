@@ -26,8 +26,8 @@ pub const SEAM_TOLERANCE: f64 = 1e-6;
 #[derive(Debug, Clone, PartialEq)]
 pub(crate) struct Seam {
     pub(crate) address: String,
-    pub(crate) first: Value,
-    pub(crate) last: Value,
+    pub(crate) first: String,
+    pub(crate) last: String,
 }
 
 /// A picture placed on the timeline from `start` to `end` (`None`: to the next clip or the end of the piece).
@@ -272,8 +272,8 @@ impl Clip {
             if !closes {
                 return Ok(Some(Seam {
                     address: address.clone(),
-                    first: first.clone(),
-                    last: last.clone(),
+                    first: show(first),
+                    last: show(last),
                 }));
             }
         }
@@ -355,6 +355,17 @@ fn drive(kind: &Kind, raw: f64) -> Result<Value, Error> {
         // constant: one half, the middle of a signal's usual zero to one
         Kind::Bool => Ok(Value::Bool(raw >= 0.5)),
         _ => Err(invalid("only a number or a bool is driven".into())),
+    }
+}
+
+/// A value as a person reads it: a number or bool plainly, a colour as its three channels.
+fn show(value: &Value) -> String {
+    match value {
+        Value::Number(n) => n.to_string(),
+        Value::Bool(b) => b.to_string(),
+        Value::Color([r, g, b]) => format!("rgb({r:.3}, {g:.3}, {b:.3})"),
+        Value::Text(t) => t.clone(),
+        Value::Picture(_) => "a picture".into(),
     }
 }
 

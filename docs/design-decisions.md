@@ -116,3 +116,15 @@ so a sweep is exactly the first clip at progress 0 and the second at 1. The mask
 the red channel as a map); the hand-built sweeps of the cenobite piece had an exposure lift and a bloom under the bar and a
 ragged edge, which stay piece-level looks. *Counts, no clock:* `RenderStats.composed` counts the composed frames; a caller times
 the render. The tests that need scene skip without it, so the gate stays green on a machine without the sibling.
+
+## Loops: a circle checked at the seam, one clip, no fades (2026-11-21)
+
+`Piece(profile, loop=True)` makes frame N equal frame 0, so the render compares what each mapping and camera signal gives at
+0 s and at `duration`, as the picture would receive it (held to its range, a cyclic address wrapped; a cyclic gap is measured the
+short way round, so a hair under 360 closes with 0), and refuses the first that differs, before any frame is drawn. A looped piece
+is refused with more than one clip, any transition (which needs two clips) or a song fade above zero: each would show or be heard
+at the seam, and cutting them silently would change the piece. The tolerance is `SEAM_TOLERANCE`, 1e-6 of the address's unit:
+above the rounding of a periodic signal read at its last moment, below anything visible. The check is by sampling two moments, not
+a proof of periodicity: a signal that agrees at both ends and wanders between is allowed, because that is a loop that moves.
+Audio is not measured: the span's whole bars are the caller's, and `bars(n)` already ends on the beat.
+

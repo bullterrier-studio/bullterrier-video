@@ -428,7 +428,7 @@ impl Piece {
         for clip in &self.clips {
             if let Some(Seam { address, first, last }) = clip.seam(end)? {
                 return Err(invalid(format!(
-                    "the loop does not close: `{address}` of clip `{}` is {first:?} at 0 s and {last:?} at {end} s; make that mapping periodic over the piece (a whole number of turns), or drop `loop`",
+                    "the loop does not close: `{address}` of clip `{}` is {first} at 0 s and {last} at {end} s; make that mapping periodic over the piece (a whole number of turns), or drop `loop`",
                     clip.name()
                 )));
             }
