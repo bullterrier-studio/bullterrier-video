@@ -1,7 +1,6 @@
 """Stills cut one into the next with sweeping transitions, under a slow camera push.
 
-A transition overlaps two clips: both are drawn during its window, then the frame is put together by the compose adapter
-(scene). The camera moves that finished frame, so no clip is drawn again and scene's cache holds. Footage and a second
+A transition draws both clips for its window, then the frame is put together by the compose adapter (scene). The camera moves that finished frame, so no clip is drawn again and scene's cache holds. Footage and a second
 track for a title come with the decode port; the rest of the piece is built.
 """
 
@@ -13,14 +12,9 @@ SWEEP = 0.25  # seconds
 piece = btv.Piece(btv.Profile.vertical(width=540, fps=24))
 cuts = [0.0, 1.0, 2.0, 3.0]  # three stills of a second each, from the start to the end: no gap
 colours = ["#c0392b", "#2c3e50", "#16a085"]
-# a still runs half a sweep into its neighbours, so that a sweep has both stills to draw (the clips overlap there)
+# the clips only touch: a transition draws both for its length, so a sweep needs no overlap
 clips = [
-    piece.clip(
-        f"still{i}",
-        bts.Scene(540, 960).add(bts.Layer.fill(colour)),
-        start=max(a - SWEEP / 2, 0.0),
-        end=b + SWEEP / 2 if i < len(colours) - 1 else b,
-    )
+    piece.clip(f"still{i}", bts.Scene(540, 960).add(bts.Layer.fill(colour)), start=a, end=b)
     for i, (colour, a, b) in enumerate(zip(colours, cuts, cuts[1:], strict=False))
 ]
 for a, b, t in zip(clips, clips[1:], cuts[1:-1], strict=False):
