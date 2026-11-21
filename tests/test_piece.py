@@ -471,7 +471,8 @@ class Handle:
 
 def test_a_handle_stands_in_for_an_address_in_map_and_set():
     piece, scene = piece_of()
-    piece["a"].map(Handle("level"), Constant(0.5)).set({Handle("title"): "PILOT", "mode": "screen"})
+    values: dict[str | Handle, object] = {Handle("title"): "PILOT", "mode": "screen"}
+    piece["a"].map(Handle("level"), Constant(0.5)).set(values)
     piece.frame(0.0)
     seen = scene.seen[-1]
     assert (seen["level"], seen["title"], seen["mode"]) == (0.5, "PILOT", "screen")
@@ -499,4 +500,4 @@ def test_a_key_that_is_neither_a_string_nor_a_handle_is_a_type_error():
     with pytest.raises(TypeError, match="address"):
         piece["a"].map(3, Time())  # type: ignore[arg-type]
     with pytest.raises(TypeError, match="address"):
-        piece["a"].set({None: 1.0})  # type: ignore[dict-item]
+        piece["a"].set({None: 1.0})  # type: ignore[type-var]

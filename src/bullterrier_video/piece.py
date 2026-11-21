@@ -12,7 +12,7 @@ from __future__ import annotations
 import os
 from dataclasses import dataclass
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Protocol
+from typing import TYPE_CHECKING, Any, Protocol, TypeVar
 
 from ._native import _core
 from .adapters.audio import AudioMusic, AudioSound
@@ -45,6 +45,11 @@ class Addressed(Protocol):
     def address(self) -> str:
         """The address string."""
         ...
+
+
+# Mapping keys are invariant: a typed `dict[str, float]` needs a bound, not a union. A literal mixing strings and
+# handles joins to `object` and is refused: its caller annotates it `dict[str | Addressed, object]`.
+_Key = TypeVar("_Key", bound="str | Addressed")
 
 
 def _address(key: str | Addressed) -> str:
@@ -93,7 +98,7 @@ class Clip:
         self._native.map(self._name, _address(address), signal, lag)
         return self
 
-    def set(self, values: Mapping[str | Addressed, object]) -> Clip:
+    def set(self, values: Mapping[_Key, object]) -> Clip:
         """Sets constants by address (a string or `Addressed` handle): numbers, bools, text, colours, choices, pictures.
 
         Nothing is set if any of them is refused.
