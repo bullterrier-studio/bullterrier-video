@@ -14,15 +14,16 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Protocol, TypeVar
 
+import numpy as np
+
 from ._native import _core
 from .adapters.audio import AudioMusic, AudioSound
 from .errors import BullterrierVideoError, InvalidError
 from .music import Music
 
 if TYPE_CHECKING:
-    from collections.abc import Mapping, Sequence
+    from collections.abc import Callable, Mapping, Sequence
 
-    import numpy as np
     from numpy.typing import NDArray
 
     from ._native._core import Profile, Span
@@ -75,6 +76,16 @@ class RenderStats:
     drawn: int
 
 
+class _FunctionSignal:
+    """A plain function of the times (array in, array out) as a signal."""
+
+    def __init__(self, function: Callable[[NDArray[np.float64]], Any]) -> None:
+        self._function = function
+
+    def sample(self, times: NDArray[np.float64]) -> NDArray[np.float64]:
+        return np.asarray(self._function(times), dtype=np.float64)
+
+
 class Clip:
     """A picture on a piece's timeline. Made by `Piece.clip`, found again with `piece[name]`; its methods chain."""
 
@@ -89,12 +100,16 @@ class Clip:
         return self._name
 
     def map(self, address: str | Addressed, signal: Any, *, lag: float = 0.0) -> Clip:
-        """Drives `address` (a string or `Addressed` handle) with `signal` (anything with `sample(times)`), `lag` late.
+        """Drives `address` (a string or `Addressed` handle) with `signal`, `lag` late.
+
+        `signal` is anything with `sample(times)`, or a plain function from an array of seconds to an array of values.
 
         The value is held to the parameter's described range: a cyclic one wraps, a whole-number one rounds, a bool
         is on from one half; a pixel value is never scaled. A text, colour, choice or picture is `set`, not mapped. The
         address is refused, with the nearest names, when the picture lacks it or it is mapped or set already.
         """
+        if callable(signal) and not hasattr(signal, "sample"):
+            signal = _FunctionSignal(signal)
         self._native.map(self._name, _address(address), signal, lag)
         return self
 

@@ -156,7 +156,12 @@ impl Signal for PySignal {
                 .bind(py)
                 .call_method1("sample", (PyArray1::from_slice(py, times),))
                 .map_err(fail)?;
-            let values: PyReadonlyArray1<'_, f64> = sampled.extract().map_err(fail)?;
+            // any numeric array or list: an int64 array does not extract as f64 as it is
+            let floats = py
+                .import("numpy")
+                .and_then(|numpy| numpy.call_method1("asarray", (sampled, "float64")))
+                .map_err(fail)?;
+            let values: PyReadonlyArray1<'_, f64> = floats.extract().map_err(fail)?;
             Ok(values.as_array().to_vec())
         })
     }

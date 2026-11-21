@@ -83,7 +83,7 @@ every frame of the clip.
   a bool take a mapped signal; a colour, a choice, a text and a picture are `set`.
 - The value is held to the described range; a **cyclic** parameter wraps into it instead (an angle of 360 reads as 0); a pixel
   value is read at the picture's own design size, so a preview and a final render agree.
-- A signal is control's (or anything with `sample(times)`); signals add, subtract and multiply with numbers and each other, so a
+- A signal is control's (or anything with `sample(times)`, or a plain function from an array of seconds to an array); signals add, subtract and multiply with numbers and each other, so a
   mix is an expression.
 - Refused, naming the address: one that the picture does not have (with the nearest names), a text or picture parameter
   (those are `set`), an address mapped twice or both mapped and set.

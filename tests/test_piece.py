@@ -119,6 +119,22 @@ def test_a_mapped_signal_becomes_the_frames_in_order(ffmpeg: Path, tmp_path: Pat
     assert first_values(out) == [0, 16384, 32768, 49151]
 
 
+def test_a_plain_function_of_the_times_is_a_signal():
+    piece, _ = piece_of()
+    piece["a"].map("level", lambda times: times * 2)
+    assert piece.frame(0.25)[0, 0, 0] == 0.5
+
+
+def test_a_signal_of_whole_numbers_works_and_a_failing_one_names_the_address_and_the_clip():
+    piece, _ = piece_of()
+    piece["a"].map("level", lambda times: np.ones(len(times), dtype=np.int64))
+    assert piece.frame(0.25)[0, 0, 0] == 1.0
+    other, _ = piece_of()
+    other["a"].map("level", lambda times: 1 / 0)
+    with pytest.raises(PortError, match=r"`level` of clip `a`.*ZeroDivisionError"):
+        other.frame(0.25)
+
+
 def test_one_frame_is_a_float_array_of_the_profiles_shape():
     piece, _ = piece_of()
     piece["a"].map("level", Constant(0.5))

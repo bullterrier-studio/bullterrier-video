@@ -162,7 +162,13 @@ impl Clip {
         let mut frames = vec![self.sets.clone(); times.len()];
         for (address, mapping) in &self.mappings {
             let lagged: Vec<Seconds> = times.iter().map(|t| (t - mapping.lag).max(0.0)).collect();
-            let raw = mapping.signal.sample(&lagged)?;
+            let raw = mapping.signal.sample(&lagged).map_err(|e| match e {
+                Error::Port { port, message } => Error::Port {
+                    port,
+                    message: format!("`{address}` of clip `{}`: {message}", self.name),
+                },
+                other => other,
+            })?;
             if raw.len() != times.len() {
                 return Err(Error::Port {
                     port: "signal",

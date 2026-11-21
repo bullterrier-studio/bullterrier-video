@@ -2,7 +2,8 @@
 
 use std::sync::Arc;
 
-use bullterrier_video::{Clip, Error, Frame, Kind, Value, Values};
+use bullterrier_video::ports::Signal;
+use bullterrier_video::{Clip, Error, Frame, Kind, Seconds, Value, Values};
 use proptest::prelude::*;
 
 use crate::common::fakes::{Described, FnSignal, constant, number, parameter};
@@ -259,6 +260,30 @@ fn a_signal_that_returns_nan_names_the_address_and_the_moment() {
         unreachable!("accepted")
     };
     assert!(message.contains("`a`") && message.contains("0.5"), "{message}");
+}
+
+#[test]
+fn a_signal_that_fails_names_the_address_and_the_clip() {
+    struct Failing;
+    impl Signal for Failing {
+        fn sample(&self, _: &[Seconds]) -> Result<Vec<f64>, Error> {
+            Err(Error::Port {
+                port: "signal",
+                message: "boom".into(),
+            })
+        }
+    }
+    let mut clip = clip_with("a", number(0.0, 1.0, false, false));
+    clip.map("a", Arc::new(Failing), 0.0)
+        .unwrap_or_else(|e| unreachable!("{e}"));
+    let Err(Error::Port { port, message }) = clip.values(&[0.0]) else {
+        unreachable!("accepted")
+    };
+    assert_eq!(port, "signal");
+    assert!(
+        message.contains("`a` of clip `c`") && message.contains("boom"),
+        "{message}"
+    );
 }
 
 #[test]
