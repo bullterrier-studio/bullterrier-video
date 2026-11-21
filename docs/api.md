@@ -79,7 +79,7 @@ through a picture hole. Waits for the decode port.
 `clip.map(address, signal, lag=0.0)` sets the value at `address` to the signal's value at `t - lag` (a negative lag leads) for
 every frame of the clip.
 
-- The address is the picture's own, as `scene.parameters()` lists it (`logo.drawing.ring_on`). A number, an integer (rounded) and
+- The address is the picture's own, as `scene.parameters()` lists it (`logo.drawing.ring_on`). `map` and `set` take it as a string or as any object with a str `.address` (`btv.Addressed`, a typed parameter handle); the handle's address is what errors name. A number, an integer (rounded) and
   a bool take a mapped signal; a colour, a choice, a text and a picture are `set`.
 - The value is held to the described range; a **cyclic** parameter wraps into it instead (an angle of 360 reads as 0); a pixel
   value is read at the picture's own design size, so a preview and a final render agree.

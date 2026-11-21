@@ -460,3 +460,43 @@ def test_a_draft_is_the_same_piece_smaller_and_slower_and_the_original_is_unchan
     assert piece.draft().profile.width == 4, "half size is the default"
     with pytest.raises(InvalidError, match="positive"):
         piece.draft(0)
+
+
+@dataclass(frozen=True)
+class Handle:
+    """Anything with an `.address`: the only thing video asks of a typed parameter."""
+
+    address: str
+
+
+def test_a_handle_stands_in_for_an_address_in_map_and_set():
+    piece, scene = piece_of()
+    piece["a"].map(Handle("level"), Constant(0.5)).set({Handle("title"): "PILOT", "mode": "screen"})
+    piece.frame(0.0)
+    seen = scene.seen[-1]
+    assert (seen["level"], seen["title"], seen["mode"]) == (0.5, "PILOT", "screen")
+
+
+def test_an_address_mapped_by_string_is_refused_again_by_handle_naming_the_string():
+    piece, _ = piece_of()
+    piece["a"].map("level", Time())
+    with pytest.raises(InvalidError, match=r"`level`.*already mapped"):
+        piece["a"].map(Handle("level"), Constant(1.0))
+
+
+def test_a_handle_to_a_missing_address_gets_the_nearest_names_and_set_stays_all_or_nothing():
+    piece, scene = piece_of()
+    with pytest.raises(InvalidError, match=r"`levle`.*`level`"):
+        piece["a"].map(Handle("levle"), Time())
+    with pytest.raises(InvalidError, match="levle"):
+        piece["a"].set({Handle("title"): "X", Handle("levle"): 1.0})
+    piece.frame(0.0)
+    assert "title" not in scene.seen[-1]
+
+
+def test_a_key_that_is_neither_a_string_nor_a_handle_is_a_type_error():
+    piece, _ = piece_of()
+    with pytest.raises(TypeError, match="address"):
+        piece["a"].map(3, Time())  # type: ignore[arg-type]
+    with pytest.raises(TypeError, match="address"):
+        piece["a"].set({None: 1.0})  # type: ignore[dict-item]

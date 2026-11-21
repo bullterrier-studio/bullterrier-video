@@ -12,7 +12,7 @@ from __future__ import annotations
 import os
 from dataclasses import dataclass
 from pathlib import Path
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, Protocol
 
 from ._native import _core
 from .adapters.audio import AudioMusic, AudioSound
@@ -27,7 +27,7 @@ if TYPE_CHECKING:
 
     from ._native._core import Profile, Span
 
-__all__ = ["DEFAULT_SHEET_WIDTH", "DEFAULT_WORKERS", "Clip", "Piece", "RenderStats", "render_all"]
+__all__ = ["DEFAULT_SHEET_WIDTH", "DEFAULT_WORKERS", "Addressed", "Clip", "Piece", "RenderStats", "render_all"]
 
 # Frames drawn at once. Scene and image already use every core inside one frame, so more workers only overlap the
 # short serial parts of a frame. Measured on the 300-frame mill (720 by 1280): 1 worker 77.6 s and 3.2 GB peak,
@@ -36,6 +36,26 @@ DEFAULT_WORKERS = 4
 
 # The long side in pixels of one cell of a contact sheet: five phone-shaped moments fit a screen at this size.
 DEFAULT_SHEET_WIDTH = 240
+
+
+class Addressed(Protocol):
+    """Anything with an `address` string: a typed parameter handle, accepted wherever an address is."""
+
+    @property
+    def address(self) -> str:
+        """The address string."""
+        ...
+
+
+def _address(key: str | Addressed) -> str:
+    """The address string of `key`, a string or an `Addressed`."""
+    if isinstance(key, str):
+        return key
+    address = getattr(key, "address", None)
+    if not isinstance(address, str):
+        msg = f"an address is a str or an object with a str `.address`, not {type(key).__name__}"
+        raise TypeError(msg)
+    return address
 
 
 @dataclass(frozen=True)
@@ -63,22 +83,22 @@ class Clip:
         """The clip's name."""
         return self._name
 
-    def map(self, address: str, signal: Any, *, lag: float = 0.0) -> Clip:
-        """Drives `address` with `signal` (anything with `sample(times)`, a control signal), read `lag` seconds late.
+    def map(self, address: str | Addressed, signal: Any, *, lag: float = 0.0) -> Clip:
+        """Drives `address` (a string or `Addressed` handle) with `signal` (anything with `sample(times)`), `lag` late.
 
         The value is held to the parameter's described range: a cyclic one wraps, a whole-number one rounds, a bool
         is on from one half; a pixel value is never scaled. A text, colour, choice or picture is `set`, not mapped. The
         address is refused, with the nearest names, when the picture lacks it or it is mapped or set already.
         """
-        self._native.map(self._name, address, signal, lag)
+        self._native.map(self._name, _address(address), signal, lag)
         return self
 
-    def set(self, values: Mapping[str, object]) -> Clip:
-        """Sets constants by address: numbers, bools, text (a colour such as `#ff00ff`, a choice) and float32 pictures.
+    def set(self, values: Mapping[str | Addressed, object]) -> Clip:
+        """Sets constants by address (a string or `Addressed` handle): numbers, bools, text, colours, choices, pictures.
 
         Nothing is set if any of them is refused.
         """
-        self._native.set(self._name, dict(values))
+        self._native.set(self._name, {_address(k): v for k, v in values.items()})
         return self
 
     def swap(self, picture: Any) -> Clip:
