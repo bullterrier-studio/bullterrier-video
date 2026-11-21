@@ -68,7 +68,7 @@ impl Song {
     /// [`Error::Port`] from the sound.
     pub(crate) fn snapped(&self, fps: f64) -> Result<Self, Error> {
         let length = whole_frames(self.duration(), fps);
-        if length == self.duration() {
+        if length >= self.duration() {
             return Ok(self.clone());
         }
         Ok(Self {
