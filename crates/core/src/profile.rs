@@ -189,3 +189,12 @@ fn even(x: f64) -> u32 {
 fn invalid(message: String) -> Error {
     Error::Invalid { message }
 }
+
+/// How far a length may fall short of a whole number of frames, in frames, and still count as that number: 29.9999999 frames
+/// that a person meant as 30 is 30. Far above the rounding of a seconds-times-rate product, far below a visible step.
+const WHOLE_FRAME_SLACK: f64 = 1e-6;
+
+/// `seconds` cut down to a whole number of frames at `fps` (a length short of one frame is zero).
+pub(crate) fn whole_frames(seconds: f64, fps: f64) -> f64 {
+    (seconds * fps + WHOLE_FRAME_SLACK).floor() / fps
+}

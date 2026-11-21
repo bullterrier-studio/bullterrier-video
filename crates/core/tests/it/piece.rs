@@ -765,7 +765,7 @@ fn looped(picture: Arc<dyn Picture>, address: &str, signal: impl Fn(f64) -> f64 
         .clip_mut("a")
         .and_then(|c| c.map(address, Arc::new(FnSignal(Box::new(signal))), 0.0))
         .unwrap_or_else(|e| unreachable!("{e}"));
-    piece.set_looped(true);
+    piece.set_looped(true).unwrap_or_else(|e| unreachable!("{e}"));
     piece
 }
 
@@ -832,7 +832,7 @@ fn a_looped_piece_with_two_clips_or_a_fade_is_refused_naming_the_fix() {
         faded
             .clip("a", Flat::new().0, 0.0, None)
             .unwrap_or_else(|e| unreachable!("{e}"));
-        faded.set_looped(true);
+        faded.set_looped(true).unwrap_or_else(|e| unreachable!("{e}"));
         assert!(refusal(&faded).contains("fade"), "fades {fade_in} {fade_out}");
     }
 }
@@ -884,6 +884,60 @@ fn a_looped_clip_that_does_not_cover_the_piece_is_refused() {
         .clip_mut("a")
         .and_then(|c| c.set(Values::from([("level".to_string(), Value::Number(0.5))])))
         .unwrap_or_else(|e| unreachable!("{e}"));
-    piece.set_looped(true);
+    piece.set_looped(true).unwrap_or_else(|e| unreachable!("{e}"));
     assert!(refusal(&piece).contains("cover"));
+}
+
+/// A looped piece of a 2.1 s song at 4 frames a second (8.4 frames), `angle` turning 360 degrees over `turn` seconds.
+fn song_of_whole_and_a_bit(turn: f64, looped_piece: bool) -> Piece {
+    let mut piece = Piece::new(Profile::square(4, 4.0).unwrap_or_else(|e| unreachable!("{e}")));
+    piece.set_looped(looped_piece).unwrap_or_else(|e| unreachable!("{e}"));
+    piece
+        .song(
+            Arc::new(FakeMusic::of(2.1)),
+            &FakeSound::of(2.1),
+            &Span::Whole,
+            0.0,
+            0.0,
+        )
+        .unwrap_or_else(|e| unreachable!("{e}"));
+    piece
+        .clip("a", Arc::new(Turn), 0.0, None)
+        .unwrap_or_else(|e| unreachable!("{e}"));
+    piece
+        .clip_mut("a")
+        .and_then(|c| c.map("angle", Arc::new(FnSignal(Box::new(move |t| 360.0 * t / turn))), 0.0))
+        .unwrap_or_else(|e| unreachable!("{e}"));
+    piece
+}
+
+#[test]
+fn a_looped_piece_is_a_whole_number_of_frames_long_and_its_sound_is_cut_to_it() {
+    let piece = song_of_whole_and_a_bit(2.0, true);
+    assert_eq!(piece.duration().unwrap_or_else(|e| unreachable!("{e}")), 2.0);
+    assert_eq!(piece.frame_count().unwrap_or_else(|e| unreachable!("{e}")), 8);
+    let encoder = Collect::default();
+    render(&piece, &encoder, 1).unwrap_or_else(|e| unreachable!("{e}"));
+    let wrote = encoder.wrote.lock().unwrap_or_else(PoisonError::into_inner).clone();
+    let sound = wrote.and_then(|w| w.3).map(|a| a.2[0]);
+    assert_eq!(sound, Some(2.0), "the soundtrack is as long as the frames");
+    // the last frame is one step short of the turn, not a fraction of one
+    let last = levels(&encoder)[7];
+    assert!((f64::from(last) - 0.875).abs() < 1e-6, "{last}");
+}
+
+#[test]
+fn an_unlooped_piece_keeps_the_songs_own_length() {
+    let piece = song_of_whole_and_a_bit(2.0, false);
+    assert_eq!(piece.duration().unwrap_or_else(|e| unreachable!("{e}")), 2.1);
+}
+
+#[test]
+fn a_looped_draft_at_another_rate_snaps_to_that_rates_frames() {
+    let draft = song_of_whole_and_a_bit(2.0, true)
+        .draft(1.0, Some(2.6))
+        .unwrap_or_else(|e| unreachable!("{e}"));
+    // 2.0 s is 5.2 frames at 2.6 a second: 5 whole ones
+    assert_eq!(draft.frame_count().unwrap_or_else(|e| unreachable!("{e}")), 5);
+    assert!((draft.duration().unwrap_or_else(|e| unreachable!("{e}")) - 5.0 / 2.6).abs() < 1e-12);
 }

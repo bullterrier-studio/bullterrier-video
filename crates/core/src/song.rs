@@ -4,6 +4,7 @@ use std::sync::Arc;
 
 use crate::error::Error;
 use crate::ports::{Music, Sound};
+use crate::profile::whole_frames;
 use crate::span::Span;
 use crate::types::{Band, Hit, Seconds, Section};
 
@@ -57,6 +58,23 @@ impl Song {
             start,
             end,
             faded: fade_in > 0.0 || fade_out > 0.0,
+        })
+    }
+
+    /// The song cut down to a whole number of frames at `fps`, from its start: what a looped piece plays, so that the sound, the
+    /// frames and the loop's period are one length. The end is cut, not rounded up: the next bar's attack stays out of the tail.
+    ///
+    /// # Errors
+    /// [`Error::Port`] from the sound.
+    pub(crate) fn snapped(&self, fps: f64) -> Result<Self, Error> {
+        let length = whole_frames(self.duration(), fps);
+        if length == self.duration() {
+            return Ok(self.clone());
+        }
+        Ok(Self {
+            soundtrack: Arc::from(self.soundtrack.cut(0.0, length)?),
+            end: self.start + length,
+            ..self.clone()
         })
     }
 

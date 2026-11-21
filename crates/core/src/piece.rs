@@ -8,7 +8,7 @@ use std::sync::{Arc, Condvar, Mutex, PoisonError};
 use crate::clip::{Clip, SEAM_TOLERANCE, Seam};
 use crate::error::Error;
 use crate::ports::{Audio, Blend, Compose, Encode, Job, Layer, Music, Picture, Signal, Sound};
-use crate::profile::Profile;
+use crate::profile::{Profile, whole_frames};
 use crate::song::Song;
 use crate::span::Span;
 use crate::transition::{self, Edge, TransitionKind, Window, sweep_masks};
@@ -98,9 +98,18 @@ impl Piece {
         }
     }
 
-    /// Makes the piece's clock a circle (or not): the frame after the last would be the first. Checked when it renders.
-    pub fn set_looped(&mut self, looped: bool) {
+    /// Makes the piece's clock a circle (or not): the frame after the last would be the first. Its length becomes a whole number
+    /// of frames, cut down (the song and [`Piece::duration`] with it), so that the period of the loop, the sound and the seam
+    /// check are one number. The rest is checked when it renders.
+    ///
+    /// # Errors
+    /// [`Error::Port`] from cutting the sound.
+    pub fn set_looped(&mut self, looped: bool) -> Result<(), Error> {
         self.looped = looped;
+        if looped {
+            self.song = self.song.as_ref().map(|s| s.snapped(self.profile.fps())).transpose()?;
+        }
+        Ok(())
     }
 
     /// The output profile.
@@ -169,7 +178,10 @@ impl Piece {
                 "the piece has a song already; build the piece again for a different span".into(),
             ));
         }
-        let song = Song::new(music, sound, span, fade_in, fade_out, self.profile.loudness())?;
+        let mut song = Song::new(music, sound, span, fade_in, fade_out, self.profile.loudness())?;
+        if self.looped {
+            song = song.snapped(self.profile.fps())?;
+        }
         self.song = Some(song.clone());
         Ok(song)
     }
@@ -260,7 +272,7 @@ impl Piece {
         }
     }
 
-    /// How long the piece lasts: the song's span, else the end of its last clip.
+    /// How long the piece lasts: the song's span, else the end of its last clip; a looped piece's is a whole number of frames.
     ///
     /// # Errors
     /// [`Error::Invalid`] when there is no song and a clip has no end.
@@ -269,12 +281,17 @@ impl Piece {
             return Ok(song.duration());
         }
         let ends: Option<Vec<Seconds>> = self.clips.iter().map(Clip::end).collect();
-        match ends {
-            Some(ends) if !ends.is_empty() => Ok(ends.into_iter().fold(0.0, f64::max)),
-            _ => Err(invalid(
+        let Some(ends) = ends.filter(|ends| !ends.is_empty()) else {
+            return Err(invalid(
                 "a piece without a song needs every clip to have an end, so that it has a length".into(),
-            )),
-        }
+            ));
+        };
+        let end = ends.into_iter().fold(0.0, f64::max);
+        Ok(if self.looped {
+            whole_frames(end, self.profile.fps())
+        } else {
+            end
+        })
     }
 
     /// The number of frames: the duration times the rate, rounded.
@@ -402,8 +419,14 @@ impl Piece {
             Some(fps) => scaled.with_fps(fps)?,
             None => scaled,
         };
+        let song = if self.looped {
+            self.song.as_ref().map(|s| s.snapped(profile.fps())).transpose()?
+        } else {
+            self.song.clone()
+        };
         Ok(Self {
             profile,
+            song,
             ..self.clone()
         })
     }
