@@ -32,9 +32,10 @@ uv run poe full                      # `check` and the gate proofs: before a tag
 | keep files identical across projects | `docs/shared-files.md` |
 
 **State:** the API is designed (`docs/api.md`, `docs/examples/`) and the first piece runs: the mill (profile, spans, a song in piece time,
-clips with their mappings, the piece and its parallel frame loop, the ffmpeg adapter in the core; `Piece`, `Clip`, `Music`, the audio
-adapter and the bindings in Python). Built surface and what is still planned (tracks, transitions, camera, footage, loops):
-`docs/api.md`. The template's `scale(value, factor)` is still a placeholder in the core, the extension, the package and the command
+clips with their mappings, the piece and its parallel frame loop, the camera and transitions through the Compose port, the ffmpeg
+adapter in the core; `Piece`, `Clip`, `Music`, `Cut`, `Dissolve`, `Sweep`, the audio and scene compose adapters and the bindings in
+Python). Built surface and what is still planned (tracks, footage, loops): `docs/api.md`. The tests that need `bullterrier_scene` skip
+without it: run them with it importable. The template's `scale(value, factor)` is still a placeholder in the core, the extension, the package and the command
 `bt-video scale`: removing it means rewriting the gate proofs that edit its line (`tests/tools/test_rust_gates.py`). No sibling
 package is a dependency: the core names none, an adapter does.
 

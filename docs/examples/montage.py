@@ -1,28 +1,31 @@
-"""A music clip from several clips of footage, cut on the beat, with a title and sweeping transitions.
+"""Stills cut one into the next with sweeping transitions, under a slow camera push.
 
-Footage is a source: each frame enters a scene through a picture hole, so a title, a grade or a drawing sits over it as layers.
-Decode is the second port video adds (after the encoder), so this piece comes after the still pieces.
+A transition overlaps two clips: both are drawn during its window, then the frame is put together by the compose adapter
+(scene). The camera moves that finished frame, so no clip is drawn again and scene's cache holds. Footage and a second
+track for a title come with the decode port; the rest of the piece is built.
 """
 
-import bullterrier_audio as bta
 import bullterrier_scene as bts
 import bullterrier_video as btv
-from bullterrier_control import Keyframe, lib
+import numpy as np
 
-piece = btv.Piece(btv.Profile.vertical(width=1080, fps=30))
-m = piece.song(bta.load("track.wav"), span=btv.around_drop(before=8.0, length=24.0))
-
-paths = ["a.mp4", "b.mp4", "c.mp4"]
-look = bts.Scene(1080, 1920).add(bts.Layer.picture(None).named("shot").fit((0, 0, 1080, 1920), "cover"))  # a hole for the frame
-cuts = [0.0, *m.downbeats[::2][1:], m.duration]  # every second bar, from the start to the end: no gap
+SWEEP = 0.25  # seconds
+piece = btv.Piece(btv.Profile.vertical(width=540, fps=24))
+cuts = [0.0, 1.0, 2.0, 3.0]  # three stills of a second each, from the start to the end: no gap
+colours = ["#c0392b", "#2c3e50", "#16a085"]
+# a still runs half a sweep into its neighbours, so that a sweep has both stills to draw (the clips overlap there)
 clips = [
-    piece.clip(f"cut{i}", look, start=a, end=b, fill={"shot.picture": btv.Footage(paths[i % 3], start=2.0 * i)})
-    for i, (a, b) in enumerate(zip(cuts, cuts[1:]))
+    piece.clip(
+        f"still{i}",
+        bts.Scene(540, 960).add(bts.Layer.fill(colour)),
+        start=max(a - SWEEP / 2, 0.0),
+        end=b + SWEEP / 2 if i < len(colours) - 1 else b,
+    )
+    for i, (colour, a, b) in enumerate(zip(colours, cuts, cuts[1:], strict=False))
 ]
-for a, b, t in zip(clips, clips[1:], cuts[1:]):
-    piece.transition(a, b, at=t, length=0.25, kind=btv.Sweep("light", angle=90))
+for a, b, t in zip(clips, clips[1:], cuts[1:-1], strict=False):
+    piece.transition(a, b, at=t, length=SWEEP, kind=btv.Sweep("light", angle=90))
 
-headline = bts.Layer.text("AFTER HOURS", font="bricolage_grotesque", size=140).named("headline")
-title = piece.clip("title", bts.Scene(1080, 1920).add(headline), start=m.drop, end=m.drop + 3, track=1)  # a second track, over the cuts
-title.map("headline.opacity", lib.keyframes(points=[Keyframe(t=m.drop, value=0), Keyframe(t=m.drop + 0.2, value=1), Keyframe(t=m.drop + 2.5, value=1), Keyframe(t=m.drop + 3, value=0)]))
-piece.render("clip.mp4")
+# a push-in over the whole piece, a little sway on top (shake is a sum of signals)
+piece.camera(zoom=lambda t: 1.0 + 0.08 * t / 3.0, dx=lambda t: 0.004 * np.sin(t * 9.0))
+print(piece.render("montage.mp4"))  # RenderStats(frames=72, drawn=72, composed=71)

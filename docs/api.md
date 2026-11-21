@@ -9,9 +9,9 @@ lines of choreography.
 The examples show the whole designed surface, including what is still planned; the built part is `examples/mill.py`'s calls.
 
 **What is built:** the ports and video's own types; the core (profile, spans, a song in piece time, clips with their mappings, the
-piece and its parallel frame loop, contact sheets, the ffmpeg adapter); the Python package (`Piece`, `Clip`, `Profile`, spans, `Music`,
-`Levels`, `render_all`, the audio adapter), the mill piece and its variants on it. **Planned, not in the signatures yet:** `track`,
-`fill`, `transition`, `camera`, `Footage`, `loop` (marked *planned* below); each arrives with the batch that needs it.
+piece and its parallel frame loop, contact sheets, the camera and transitions, the ffmpeg adapter); the Python package (`Piece`, `Clip`, `Profile`, spans, `Music`,
+`Levels`, `render_all`, `Cut`, `Dissolve`, `Sweep`, the audio and scene compose adapters), the mill piece and its variants on it. **Planned, not in the signatures yet:** `track`,
+`fill`, `Footage`, `loop` (marked *planned* below); each arrives with the batch that needs it.
 
 ## Principles
 
@@ -44,9 +44,9 @@ piece.render("mill.mp4")
 | `Piece[name] -> Clip` | the clip of that name, to `set`, `map` or `swap` it |
 | `Piece.clip(name, source, start=0.0, end=None) -> Clip` | puts a picture on the timeline (a cut from one clip to the next; overlap is refused); `source` is a scene or anything with the Picture port's methods. *Planned:* `track=`, a `Footage` source, `fill=` |
 | `Piece.song(sound, span, *, fade_in=0.0, fade_out=0.0) -> Music` | cuts the sound to `span`, fades it, puts it under the piece, returns what it knows in the piece's own time; once: a second call is an `InvalidError` (a timing variant builds the piece again) |
-| *Planned:* `Piece.transition(a, b, at, length, kind=Cut())` | from clip `a` to clip `b`, centred on `at`; `kind`: `Cut`, `Dissolve`, `Sweep("light" or "dark", angle=0)` |
-| *Planned:* `Piece.camera(dx=None, dy=None, zoom=None, rotate=None)` | one transform over the finished composition; each a signal (`dx`, `dy` as fractions of the long side, `zoom` one for none, `rotate` degrees). The finished frame is moved once by the Compose port, so no layer is drawn again and scene's cache holds; the price is one resample of the frame |
-| `Piece.render(path, *, workers=None)` | the file (mp4, mov, gif or png by its extension) through ffmpeg; frames drawn on `workers` threads (`DEFAULT_WORKERS`) and handed over in order, so the file does not depend on the number; written under a temporary name and renamed when ffmpeg succeeded; a frame equal to the one before it (same clip and values) is not drawn again, so a held pose or a still costs one drawing; returns `RenderStats(frames, drawn)` |
+| `Piece.transition(a, b, at, length, kind=Cut())` | from clip `a` to clip `b` (clips or names), centred on `at`, `length` seconds long; both clips are drawn during the window. `Cut`: the first until the middle, then the second, nothing blended (no compose call). `Dissolve`: the second fades in over the first. `Sweep(kind="light", angle=0, feather=0.15)`: a soft edge (`feather` a fraction of the long side) crosses the frame at `angle` degrees clockwise (0 left to right, 90 downwards) and shows the second clip behind it; `"light"` rides a white bar on the edge under screen blend, `"dark"` a black one. Clips overlap only inside a transition that covers the overlap (refused otherwise, naming the call to make); two transitions do not overlap each other. Not in v1 (piece-level looks): an exposure lift and bloom under the bar, a ragged edge |
+| `Piece.camera(dx=None, dy=None, zoom=None, rotate=None)` | one move over the finished frame; each a signal (anything `Clip.map` takes; `None` is at rest): `dx`, `dy` fractions of the long side, `zoom` one for none (above zero), `rotate` degrees clockwise about the centre; shake is a sum of signals. The compose adapter places each layer of the frame once, so no clip is drawn again and scene's cache holds; a frame whose view is at rest is not composed. A second call replaces the camera |
+| `Piece.render(path, *, workers=None)` | the file (mp4, mov, gif or png by its extension) through ffmpeg; frames drawn on `workers` threads (`DEFAULT_WORKERS`) and handed over in order, so the file does not depend on the number; written under a temporary name and renamed when ffmpeg succeeded; a frame equal to the one before it (same clips, values and camera) is not drawn again, so a held pose or a still costs one drawing; returns `RenderStats(frames, drawn, composed)` (counts only: `composed` is the drawn frames put together by the compose adapter) |
 | `Piece.draft(scale=0.5, *, fps=None)` | the same piece smaller (each side `scale` times, to the nearest even number) and, with `fps`, slower: pictures draw at any size, so a draft costs about `scale` squared of a render (the mill, 38 s: half size 7.8 s, half size at 15 fps 4.5 s, quarter size at 15 fps 1.7 s); the piece itself is unchanged |
 | `Piece.frame(t) -> ndarray` | one moment at the profile's size, float32 RGBA straight alpha |
 | `Piece.sheet(path, at, width=240, *, columns=None)` | a contact sheet (png) of chosen moments side by side (or wrapped into rows of `columns`, the last row padded), each cell drawn `width` pixels along its long side by the picture itself, so it takes a few frames' time, not a render's; a moment no clip draws is a black cell; the last frame is at `duration - 1/fps`, a moment past it is refused naming it |
@@ -88,7 +88,7 @@ every frame of the clip.
 - Refused, naming the address: one that the picture does not have (with the nearest names), a text or picture parameter
   (those are `set`), an address mapped twice or both mapped and set.
 - A moment no clip covers is black. Clips follow one another: a clip with no `end` runs to the next clip's start or the piece's end.
-- *Planned:* a clip may be drawn outside its own span (a transition needs both pictures); its signals are total, so this is safe.
+- A clip is drawn outside its own span during a transition (it needs both pictures); its signals are total, so this is safe.
 
 ## Soundtrack
 
@@ -112,7 +112,7 @@ name no sibling's type.
 | Port | Promises | First adapter | Needed by |
 |---|---|---|---|
 | `Picture` | `parameters()` and `render(values, long_side)`: **one long-lived instance, rendered with new values each frame**, so its cache is kept | scene | slice 1 |
-| `Compose` | `compose(layers)`: frames, each with a placement (a `View`), opacity, blend and mask, into one frame of the ground's size: tracks, transitions, the camera | scene (its layers take a frame as a picture) | the first piece with a transition (*not built*) |
+| `Compose` | `compose(layers)`: frames, each with a placement (a `View`), opacity, blend and mask, into one frame of the ground's size: tracks, transitions, the camera | scene (its layers take a frame as a picture) | camera, transitions (built: `bullterrier_video.adapters.scene_compose`) |
 | `Signal` | `sample(times)`: a value at any time, many times in one call | control | slice 1 |
 | `Music` | duration, beats, downbeats, drops, hits, sections, `band`: times in seconds and levels; an unknown measure is an error, never an empty list | audio | slice 1 |
 | `Sound` | rate, channels, duration, `cut`, `fade`, `samples`: one sound edited at a time | audio | slice 1 |
@@ -128,12 +128,20 @@ name no sibling's type.
 | Signal | `sample(times)` returning an array |
 | Music and Sound | a `bullterrier_audio.Sound` (measures and edits are one object in audio; two ports in video, so a replacement may supply either). `bullterrier_video.adapters.audio` wraps it as the plain-data objects the core calls (`beats()`, `hits("kick")`, `band("bass", start, end)`, `cut`, `fade`, `normalised`, `samples()` interleaved); it is the one file that names the audio library |
 
-**Camera, tracks and transitions go through `Compose`.** Video draws each clip with the Picture port, then stacks the frames: a
-title is a layer on a second track; a transition is the outgoing frame, the incoming frame with a **mask video generates** (a
-soft gradient edge at an angle, moved by the transition's progress), and for a sweep a white layer under `Screen` with the same
-mask; the camera is the finished frame placed by one `View`. Video makes the masks (they are arithmetic on its own `Frame`); scene
-does the blend and the placement. The scene adapter is the one that builds layers, so it imports scene (its Python adapter,
-lazily) and it is not duck-typed.
+**Camera and transitions go through `Compose`** (tracks will). Video draws each clip with the Picture port, then stacks the frames:
+a transition is the outgoing frame and the incoming frame with a **mask video generates** (a soft edge at an angle, moved by the
+transition's progress), and for a sweep a bar on the edge (white under `Screen`, or black) with the edge's own mask; the camera is
+a `View` on every layer of that stack. Video makes the masks (arithmetic on its own `Frame`); scene does the blend and the
+placement. The scene adapter is Python (`adapters/scene_compose.py`, imported when a camera or transition is first used): each
+call builds a scene of picture-hole layers, fills the holes with the frames, sets place, opacity, blend and a map for the mask,
+and renders. The core never names scene; a Python object with `compose(layers)` (each layer `(frame, (dx, dy, zoom, rotate),
+opacity, blend, mask)`, returning a float32 `(height, width, 4)` array) is the Compose port's Python shape.
+
+**Measured cost** (1920 by 1080, float32 RGBA, one frame through `Piece.frame`, machine load average 11 to 16, so read them
+as about plus or minus 30 percent): a frame with no camera 7 ms (the array copy); the same under a camera (zoom, rotate, dx) 47
+ms; a dissolve 75 ms; a light sweep 160 ms. At 960 by 540: 1.5, 19, 29 and 62 ms. Scene alone at 1080p, median of 7: one frame
+into a raster 5 ms, a placed layer 22 to 30 ms, three layers with a place, an opacity, a screen blend and a map mask 68 to 87 ms.
+A render pays this only for frames that are composed and drawn (a held frame is drawn once, a camera at rest costs nothing).
 
 ## ffmpeg
 

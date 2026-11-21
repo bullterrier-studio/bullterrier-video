@@ -93,3 +93,19 @@ library keeps no clock (`docs/rules.md`), so a caller times the render, as the d
 the values that changed, letting a picture say how many cores it wants (scene and image already use every core inside a frame, so four
 workers gave 2.0 times, not 4), process workers for pictures that hold the GIL, hardware encoders (pointless while encoding costs a
 second).
+
+## Camera and transitions: compose in Python, the view on every layer (2026-11-21)
+
+A frame is made of layers (the clips drawn for it), an optional mix (a dissolve or a sweep and its progress) and the camera's view;
+that value is compared with the one before it, so a moving camera is never skipped and a held frame is drawn once. The Compose
+port's first adapter is Python (`adapters/scene_compose.py`), not a Rust crate on scene: scene is not published and pins image
+and vector by git, so a Rust dependency would be a second pin set to keep in step, and the Python path measured fast enough
+(5 ms from array to raster at 1080p after scene's bulk copy; 110 ms before it, which is why the conversion was fixed in scene
+and not worked round here). *The camera is a view on every layer of the stack, in one compose call,* not a second pass over
+the finished frame: each layer is resampled once from its own pixels (a second pass would resample twice, and cost a second
+array conversion), and the result is the same picture. A frame with one layer and a view at rest makes no compose call at all.
+*Sweep's bar* is a layer of its own (white under screen, or black) with a mask that is the edge's: 0 away from it, 1 on it,
+so a sweep is exactly the first clip at progress 0 and the second at 1. The masks are made in the core as frames (scene reads
+the red channel as a map); the hand-built sweeps of the cenobite piece had an exposure lift and a bloom under the bar and a
+ragged edge, which stay piece-level looks. *Counts, no clock:* `RenderStats.composed` counts the composed frames; a caller times
+the render. The tests that need scene skip without it, so the gate stays green on a machine without the sibling.

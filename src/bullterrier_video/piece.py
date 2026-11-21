@@ -225,9 +225,12 @@ class Piece:
         self._native.camera(*(None if s is None else _signal(s) for s in (dx, dy, zoom, rotate)))
         return self
 
-    def transition(self, a: str, b: str, at: float, length: float, kind: Cut | Dissolve | Sweep | None = None) -> Piece:
-        """From clip `a` to clip `b`, centred on `at` seconds, `length` seconds long; `kind` is a `Cut` (the default), a
-        `Dissolve` or a `Sweep`.
+    def transition(
+        self, a: str | Clip, b: str | Clip, at: float, length: float, kind: Cut | Dissolve | Sweep | None = None
+    ) -> Piece:
+        """From clip `a` to clip `b` (clips or their names), centred on `at` seconds and `length` seconds long.
+
+        `kind` is a `Cut` (the default), a `Dissolve` or a `Sweep`.
 
         Both clips are drawn during the window, outside their own spans if need be (signals are total). Clips may
         overlap only inside a transition that covers the overlap; two transitions do not overlap each other. Needs
@@ -245,7 +248,9 @@ class Piece:
             case other:
                 message = f"a transition kind is Cut(), Dissolve() or Sweep(...), got {other!r}"
                 raise InvalidError(message)
-        self._native.transition(a, b, at, length, *spec)
+        self._native.transition(
+            a if isinstance(a, str) else a.name, b if isinstance(b, str) else b.name, at, length, *spec
+        )
         return self
 
     def _with_compose(self) -> None:
