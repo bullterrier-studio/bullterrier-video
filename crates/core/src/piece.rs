@@ -7,11 +7,12 @@ use std::sync::{Arc, Condvar, Mutex, PoisonError};
 
 use crate::clip::Clip;
 use crate::error::Error;
-use crate::ports::{Audio, Encode, Job, Music, Picture, Sound};
+use crate::ports::{Audio, Blend, Compose, Encode, Job, Layer, Music, Picture, Signal, Sound};
 use crate::profile::Profile;
 use crate::song::Song;
 use crate::span::Span;
-use crate::types::{Frame, Seconds, Values};
+use crate::transition::{self, Edge, TransitionKind, Window, sweep_masks};
+use crate::types::{Frame, Seconds, Values, View};
 
 /// How many frames a worker may be ahead of the one the encoder wants next, so memory stays flat: a frame in flight is
 /// 16 bytes a pixel, 15 MB at 720 by 1280.
@@ -32,22 +33,53 @@ pub struct Piece {
     profile: Profile,
     clips: Vec<Clip>,
     song: Option<Song>,
+    compose: Option<Arc<dyn Compose>>,
+    camera: Option<Camera>,
+    transitions: Vec<Window>,
 }
 
-/// What a render did: the frames it wrote, and how many of them it had to draw (a frame equal to the one before it is that frame again).
+/// The signals that move the finished frame; one that is not given leaves its part of the view at rest.
+#[derive(Clone)]
+struct Camera {
+    dx: Option<Arc<dyn Signal>>,
+    dy: Option<Arc<dyn Signal>>,
+    zoom: Option<Arc<dyn Signal>>,
+    rotate: Option<Arc<dyn Signal>>,
+}
+
+/// What a render did: the frames it wrote, how many of them it had to draw (a frame equal to the one before it is that frame
+/// again) and how many of those it put together with the compose port (a camera at rest and a cut cost none).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct RenderStats {
     /// Frames written.
     pub frames: usize,
     /// Frames drawn.
     pub drawn: usize,
+    /// Drawn frames that went through the compose port.
+    pub composed: usize,
 }
 
-/// What one frame is made of: the clip that draws it (`None`: nothing, so black) and the values to draw it with.
+/// What one frame is made of: the clips that draw it (none: black) with the values to draw each with, how the second of two
+/// is mixed in, and the camera's view of the result.
 #[derive(PartialEq)]
 struct Step {
-    clip: Option<usize>,
-    values: Values,
+    layers: Vec<(usize, Values)>,
+    mix: Option<Mix>,
+    view: View,
+}
+
+/// A transition under way: the kind (never a cut) and how far along it is.
+#[derive(Clone, Copy, PartialEq)]
+struct Mix {
+    kind: TransitionKind,
+    progress: f64,
+}
+
+impl Step {
+    /// Whether the frame needs the compose port: two layers, or a view that moves the picture.
+    fn composes(&self) -> bool {
+        !self.layers.is_empty() && (self.layers.len() > 1 || self.view != View::IDENTITY)
+    }
 }
 
 impl Piece {
@@ -58,6 +90,9 @@ impl Piece {
             profile,
             clips: Vec::new(),
             song: None,
+            compose: None,
+            camera: None,
+            transitions: Vec::new(),
         }
     }
 
@@ -130,6 +165,92 @@ impl Piece {
         let song = Song::new(music, sound, span, fade_in, fade_out, self.profile.loudness())?;
         self.song = Some(song.clone());
         Ok(song)
+    }
+
+    /// Gives the piece the port that puts frames together; a camera and a transition need it.
+    pub fn compose(&mut self, compose: Arc<dyn Compose>) {
+        self.compose = Some(compose);
+    }
+
+    /// Moves the finished frame: `dx` and `dy` as fractions of its long side, `zoom` (one is none) and `rotate` in degrees,
+    /// each a signal read at the frame's time; one that is `None` stays at rest. Replaces an earlier camera. A frame whose
+    /// view is at rest is not composed at all.
+    ///
+    /// # Errors
+    /// [`Error::Invalid`] when the piece has no compose port.
+    pub fn camera(
+        &mut self,
+        dx: Option<Arc<dyn Signal>>,
+        dy: Option<Arc<dyn Signal>>,
+        zoom: Option<Arc<dyn Signal>>,
+        rotate: Option<Arc<dyn Signal>>,
+    ) -> Result<(), Error> {
+        self.needs_compose("a camera")?;
+        self.camera = Some(Camera { dx, dy, zoom, rotate });
+        Ok(())
+    }
+
+    /// A transition from clip `a` to clip `b`, centred on `at` and `length` seconds long. Both clips are drawn during the
+    /// window (a clip is drawn outside its own span); clips may overlap only inside a window.
+    ///
+    /// # Errors
+    /// [`Error::Invalid`] when a clip is unknown or the same twice, `at` or `length` is not a finite number (or `length` is not
+    /// above zero), the kind is not usable, the window overlaps another, or the piece has no compose port.
+    pub fn transition(
+        &mut self,
+        a: &str,
+        b: &str,
+        at: Seconds,
+        length: Seconds,
+        kind: TransitionKind,
+    ) -> Result<(), Error> {
+        let index = |name: &str| {
+            self.clips
+                .iter()
+                .position(|c| c.name() == name)
+                .ok_or_else(|| self.no_clip(name))
+        };
+        let (a, b) = (index(a)?, index(b)?);
+        if a == b {
+            return Err(invalid(
+                "a transition goes from one clip to another, not to itself".into(),
+            ));
+        }
+        if !(at.is_finite() && length.is_finite() && length > 0.0) {
+            return Err(invalid(format!(
+                "a transition needs a finite moment and a length above zero, got {at} and {length}"
+            )));
+        }
+        transition::check(kind)?;
+        if !matches!(kind, TransitionKind::Cut) {
+            self.needs_compose("a dissolve or a sweep")?;
+        }
+        let window = Window { a, b, at, length, kind };
+        if let Some(other) = self
+            .transitions
+            .iter()
+            .find(|w| window.start() < w.end() && w.start() < window.end())
+        {
+            return Err(invalid(format!(
+                "the transition from `{}` to `{}` overlaps the one from `{}` to `{}`: two run one after the other, not together",
+                self.clips[a].name(),
+                self.clips[b].name(),
+                self.clips[other.a].name(),
+                self.clips[other.b].name()
+            )));
+        }
+        self.transitions.push(window);
+        Ok(())
+    }
+
+    fn needs_compose(&self, what: &str) -> Result<(), Error> {
+        if self.compose.is_some() {
+            Ok(())
+        } else {
+            Err(invalid(format!(
+                "{what} needs a compose port to put frames together: give the piece one with `compose`"
+            )))
+        }
     }
 
     /// How long the piece lasts: the song's span, else the end of its last clip.
@@ -255,6 +376,7 @@ impl Piece {
         Ok(RenderStats {
             frames,
             drawn: drawn_at.len(),
+            composed: drawn_at.iter().filter(|&&at| steps[at].composes()).count(),
         })
     }
 
@@ -276,7 +398,8 @@ impl Piece {
         })
     }
 
-    /// Which clip draws each moment: clips by start, an end that is not given reaching the next clip or the piece's end.
+    /// Which clip draws each moment: clips by start, an end that is not given reaching the next clip or the piece's end. An
+    /// overlap is allowed only where a transition between the two covers it.
     fn layout(&self) -> Result<Vec<(usize, Seconds, Seconds)>, Error> {
         let duration = self.duration()?;
         let mut order: Vec<usize> = (0..self.clips.len()).collect();
@@ -284,27 +407,83 @@ impl Piece {
         let mut laid = Vec::with_capacity(order.len());
         for (place, &index) in order.iter().enumerate() {
             let clip = &self.clips[index];
-            let next = order.get(place + 1).map(|&n| &self.clips[n]);
-            let end = clip.end().unwrap_or_else(|| next.map_or(duration, Clip::start));
-            if let Some(next) = next.filter(|n| end > n.start()) {
-                return Err(invalid(format!(
-                    "clips `{}` and `{}` overlap: layers on top of each other need the compose adapter, which is not built",
-                    clip.name(),
-                    next.name()
-                )));
+            let following = order.get(place + 1).copied();
+            let end = clip
+                .end()
+                .unwrap_or_else(|| following.map_or(duration, |n| self.clips[n].start()));
+            if let Some(n) = following.filter(|&n| end > self.clips[n].start()) {
+                let next = &self.clips[n];
+                let covered = self
+                    .transitions
+                    .iter()
+                    .any(|w| w.a == index && w.b == n && w.start() <= next.start() && end <= w.end());
+                if !covered {
+                    return Err(invalid(format!(
+                        "clips `{0}` and `{1}` overlap from {2} s to {end} s: cover it with a transition (`transition(\"{0}\", \"{1}\", at, length)`) or end `{0}` where `{1}` starts",
+                        clip.name(),
+                        next.name(),
+                        next.start(),
+                    )));
+                }
             }
             laid.push((index, clip.start(), end));
         }
         Ok(laid)
     }
 
-    /// The values for each of `times`, every clip's signals read once for all its times.
+    /// The view at each of `times`: the camera's signals read once for all of them.
+    fn views(&self, times: &[Seconds]) -> Result<Vec<View>, Error> {
+        let Some(camera) = &self.camera else {
+            return Ok(vec![View::IDENTITY; times.len()]);
+        };
+        let read = |name: &str, signal: &Option<Arc<dyn Signal>>, rest: f64| -> Result<Vec<f64>, Error> {
+            let Some(signal) = signal else {
+                return Ok(vec![rest; times.len()]);
+            };
+            let raw = signal.sample(times).map_err(|e| match e {
+                Error::Port { port, message } => Error::Port {
+                    port,
+                    message: format!("camera {name}: {message}"),
+                },
+                other => other,
+            })?;
+            if raw.len() != times.len() {
+                return Err(Error::Port {
+                    port: "signal",
+                    message: format!("camera {name}: gave {} values for {} times", raw.len(), times.len()),
+                });
+            }
+            match raw.iter().zip(times).find(|(v, _)| !v.is_finite()) {
+                Some((v, t)) => Err(invalid(format!("camera {name} at {t} s: the value is {v}"))),
+                None => Ok(raw),
+            }
+        };
+        let (dx, dy) = (read("dx", &camera.dx, 0.0)?, read("dy", &camera.dy, 0.0)?);
+        let (zoom, rotate) = (read("zoom", &camera.zoom, 1.0)?, read("rotate", &camera.rotate, 0.0)?);
+        if let Some((z, t)) = zoom.iter().zip(times).find(|(z, _)| **z <= 0.0) {
+            return Err(invalid(format!(
+                "camera zoom at {t} s is {z}: a zoom above zero is wanted (one is none)"
+            )));
+        }
+        Ok((0..times.len())
+            .map(|i| View {
+                dx: dx[i],
+                dy: dy[i],
+                zoom: zoom[i],
+                rotate: rotate[i],
+            })
+            .collect())
+    }
+
+    /// What each of `times` is made of, every clip's signals read once for all its times.
     fn steps(&self, layout: &[(usize, Seconds, Seconds)], times: &[Seconds]) -> Result<Vec<Step>, Error> {
-        let mut steps: Vec<Step> = times
-            .iter()
-            .map(|_| Step {
-                clip: None,
-                values: Values::new(),
+        let mut steps: Vec<Step> = self
+            .views(times)?
+            .into_iter()
+            .map(|view| Step {
+                layers: Vec::new(),
+                mix: None,
+                view,
             })
             .collect();
         for &(index, start, end) in layout {
@@ -313,10 +492,26 @@ impl Piece {
                 .collect();
             let at: Vec<Seconds> = mine.iter().map(|&i| times[i]).collect();
             for (&i, values) in mine.iter().zip(self.clips[index].values(&at)?) {
-                steps[i] = Step {
-                    clip: Some(index),
-                    values,
-                };
+                steps[i].layers = vec![(index, values)];
+            }
+        }
+        for window in &self.transitions {
+            let mine: Vec<usize> = (0..times.len())
+                .filter(|&i| window.start() <= times[i] && times[i] < window.end())
+                .collect();
+            let at: Vec<Seconds> = mine.iter().map(|&i| times[i]).collect();
+            let (first, second) = (self.clips[window.a].values(&at)?, self.clips[window.b].values(&at)?);
+            for ((&i, a), b) in mine.iter().zip(first).zip(second) {
+                let progress = window.progress(times[i]);
+                match window.kind {
+                    TransitionKind::Cut => {
+                        steps[i].layers = vec![if progress < 0.5 { (window.a, a) } else { (window.b, b) }];
+                    }
+                    kind => {
+                        steps[i].layers = vec![(window.a, a), (window.b, b)];
+                        steps[i].mix = Some(Mix { kind, progress });
+                    }
+                }
             }
         }
         Ok(steps)
@@ -340,17 +535,73 @@ impl Piece {
         })
     }
 
-    /// One frame: the clip's picture with the values, or black where no clip is.
+    /// One frame: the clips' pictures with their values put together, or black where no clip is.
     fn draw(&self, step: &Step) -> Result<Frame, Error> {
         let (width, height) = (self.profile.width() as usize, self.profile.height() as usize);
-        match step.clip {
-            None => Frame::new(width, height, [0.0, 0.0, 0.0, 1.0].repeat(width * height)),
-            Some(index) => {
-                let frame = self.clips[index]
-                    .picture()
-                    .render(&step.values, self.profile.long_side())?;
-                self.in_profile_shape(index, frame)
+        if step.layers.is_empty() {
+            return Frame::new(width, height, [0.0, 0.0, 0.0, 1.0].repeat(width * height));
+        }
+        let mut frames = Vec::with_capacity(step.layers.len());
+        for (index, values) in &step.layers {
+            let frame = self.clips[*index].picture().render(values, self.profile.long_side())?;
+            frames.push(self.in_profile_shape(*index, frame)?);
+        }
+        self.put_together(step, frames)
+    }
+
+    /// The frames of a step's layers as one: the only one as it is when the view is at rest, else through the compose port.
+    fn put_together(&self, step: &Step, mut frames: Vec<Frame>) -> Result<Frame, Error> {
+        let view = step.view;
+        let at_rest = |frame| Layer::new(frame, view);
+        let compose = |layers: &[Layer<'_>]| match &self.compose {
+            Some(compose) => compose.compose(layers),
+            None => Err(invalid(
+                "a camera or a transition needs a compose port: give the piece one with `compose`".into(),
+            )),
+        };
+        let Some(Mix { kind, progress }) = step.mix else {
+            return match frames.pop() {
+                Some(only) if step.view == View::IDENTITY => Ok(only),
+                Some(only) => compose(&[at_rest(&only)]),
+                None => Err(invalid("a frame with no layer".into())),
+            };
+        };
+        let [first, second] = &frames[..] else {
+            return Err(invalid("a transition mixes two frames".into()));
+        };
+        match kind {
+            TransitionKind::Sweep { edge, angle, feather } => {
+                let (shown, bar) = sweep_masks(first.width(), first.height(), angle, feather, progress)?;
+                let level = if edge == Edge::Light { 1.0 } else { 0.0 };
+                let shade = Frame::new(
+                    first.width(),
+                    first.height(),
+                    [level, level, level, 1.0].repeat(first.width() * first.height()),
+                )?;
+                compose(&[
+                    at_rest(first),
+                    Layer {
+                        mask: Some(&shown),
+                        ..at_rest(second)
+                    },
+                    Layer {
+                        mask: Some(&bar),
+                        blend: if edge == Edge::Light {
+                            Blend::Screen
+                        } else {
+                            Blend::Normal
+                        },
+                        ..at_rest(&shade)
+                    },
+                ])
             }
+            _ => compose(&[
+                at_rest(first),
+                Layer {
+                    opacity: progress,
+                    ..at_rest(second)
+                },
+            ]),
         }
     }
 
@@ -404,9 +655,15 @@ impl Piece {
         let drawn = steps
             .iter()
             .map(|step| {
-                step.clip
-                    .map(|index| self.clips[index].picture().render(&step.values, width))
-                    .transpose()
+                if step.layers.is_empty() {
+                    return Ok(None);
+                }
+                let frames = step
+                    .layers
+                    .iter()
+                    .map(|(index, values)| self.clips[*index].picture().render(values, width))
+                    .collect::<Result<Vec<Frame>, Error>>()?;
+                self.put_together(step, frames).map(Some)
             })
             .collect::<Result<Vec<Option<Frame>>, Error>>()?;
         let (cell_width, cell_height) = drawn.iter().flatten().next().map_or_else(

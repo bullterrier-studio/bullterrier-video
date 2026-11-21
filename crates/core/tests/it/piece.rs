@@ -646,7 +646,14 @@ fn a_frame_equal_to_the_one_before_is_drawn_once_and_handed_over_again() {
         assert_eq!(levels(&encoder), vec![0.5; 8], "{workers} workers");
         assert_eq!(
             (stats, drawn.load(Ordering::SeqCst)),
-            (RenderStats { frames: 8, drawn: 1 }, 1),
+            (
+                RenderStats {
+                    frames: 8,
+                    drawn: 1,
+                    composed: 0
+                },
+                1
+            ),
             "{workers} workers"
         );
 

@@ -15,6 +15,7 @@ mod profile;
 mod scaling;
 mod song;
 mod span;
+mod transition;
 mod types;
 
 pub use clip::Clip;
@@ -25,4 +26,5 @@ pub use profile::Profile;
 pub use scaling::scale;
 pub use song::{Levels, Song};
 pub use span::Span;
+pub use transition::{Edge, TransitionKind};
 pub use types::{Band, Frame, Hit, Kind, Moment, Parameter, Seconds, Section, Value, Values, View};

@@ -30,6 +30,20 @@ pub struct Layer<'a> {
     pub mask: Option<&'a Frame>,
 }
 
+impl<'a> Layer<'a> {
+    /// `frame` as it is (full opacity, normal blend, no mask) moved by `view`.
+    #[must_use]
+    pub fn new(frame: &'a Frame, view: View) -> Self {
+        Self {
+            frame,
+            view,
+            opacity: 1.0,
+            blend: Blend::Normal,
+            mask: None,
+        }
+    }
+}
+
 /// Puts frames together: tracks (a title over a clip), transitions (two clips and a moving mask, and a light) and the camera
 /// (one frame moved). Video decides what and when; this does the pixels.
 pub trait Compose: Send + Sync {

@@ -5,6 +5,7 @@
 mod common;
 
 mod architecture;
+mod camera;
 mod clip;
 mod ffmpeg;
 mod piece;
