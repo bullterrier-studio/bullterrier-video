@@ -8,6 +8,7 @@ from .errors import BullterrierVideoError, InvalidError, PortError
 from .music import Bar, Levels, Music, Phrase, Section
 from .piece import Addressed, Clip, Piece, RenderStats, render_all
 from .spans import Span, around_drop, bars, between, loudest, whole
+from .transitions import Cut, Dissolve, Sweep
 
 __version__ = metadata.version("bullterrier-video")
 
@@ -16,6 +17,8 @@ __all__ = [
     "Bar",
     "BullterrierVideoError",
     "Clip",
+    "Cut",
+    "Dissolve",
     "InvalidError",
     "Levels",
     "Music",
@@ -26,6 +29,7 @@ __all__ = [
     "RenderStats",
     "Section",
     "Span",
+    "Sweep",
     "__version__",
     "around_drop",
     "bars",

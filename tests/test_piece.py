@@ -469,11 +469,11 @@ def test_render_all_makes_one_file_for_each_name_and_names_the_piece_that_fails(
 def test_a_render_says_how_many_frames_it_drew_and_a_held_frame_is_not_drawn_again(ffmpeg: Path, tmp_path: Path):
     held, _ = piece_of()
     held["a"].set({"level": 0.5})
-    assert held.render(tmp_path / "held.mp4") == btv.RenderStats(frames=4, drawn=1)
+    assert held.render(tmp_path / "held.mp4") == btv.RenderStats(frames=4, drawn=1, composed=0)
     assert first_values(tmp_path / "held.mp4") == [32768] * 4, "every frame is there, drawn once"
     moving, _ = piece_of()
     moving["a"].map("level", Time())
-    assert moving.render(tmp_path / "moving.mp4") == btv.RenderStats(frames=4, drawn=4)
+    assert moving.render(tmp_path / "moving.mp4") == btv.RenderStats(frames=4, drawn=4, composed=0)
 
 
 class Scaling(FakeScene):
@@ -539,3 +539,144 @@ def test_a_key_that_is_neither_a_string_nor_a_handle_is_a_type_error():
         piece["a"].map(3, Time())  # type: ignore[arg-type]
     with pytest.raises(TypeError, match="address"):
         piece["a"].set({None: 1.0})  # type: ignore[type-var]
+
+
+# the camera and the transitions: the compose adapter is scene, so those tests need it (skipped without it)
+
+
+class Still:
+    """A picture that is one given array whatever it is asked."""
+
+    def __init__(self, pixels: np.ndarray) -> None:
+        self.pixels = pixels.astype(np.float32)
+
+    def parameters(self) -> dict[str, Described]:
+        return {}
+
+    def with_values(self, values: dict[str, Any]) -> Still:
+        return self
+
+    def render(self, size: int) -> np.ndarray:
+        return self.pixels
+
+
+def stripes(*colours: tuple[float, float, float], height: int = 4, each: int = 2) -> np.ndarray:
+    """A picture `height` high whose columns are the `colours`, `each` columns wide, opaque."""
+    row = np.repeat(np.array([(*c, 1.0) for c in colours], dtype=np.float32), each, axis=0)
+    return np.repeat(row[None], height, axis=0)
+
+
+RED, GREEN, BLUE, WHITE = (1.0, 0.0, 0.0), (0.0, 1.0, 0.0), (0.0, 0.0, 1.0), (1.0, 1.0, 1.0)
+
+
+def camera_piece(pixels: np.ndarray, **camera: Any) -> btv.Piece:
+    """A one-second piece of `pixels` seen through a camera of constants."""
+    pytest.importorskip("bullterrier_scene")
+    height, width = pixels.shape[:2]
+    piece = btv.Piece(btv.Profile(width, height, 4.0))
+    piece.clip("a", Still(pixels), end=1.0)
+    return piece.camera(**{name: Constant(value) for name, value in camera.items()})
+
+
+def test_a_camera_zoom_scales_about_the_centre():
+    source = stripes(RED, GREEN, BLUE, WHITE)  # 8 columns, two to a colour
+    shown = camera_piece(source, zoom=2.0).frame(0.0)
+    # by hand: output column c looks at source x = 4 + (c + 0.5 - 4) / 2: 1 is at 2.75 (green), 6 at 5.25 (blue)
+    np.testing.assert_allclose(shown[:, 1], np.tile([*GREEN, 1.0], (4, 1)), atol=1e-4)
+    np.testing.assert_allclose(shown[:, 6], np.tile([*BLUE, 1.0], (4, 1)), atol=1e-4)
+
+
+def test_dx_and_dy_are_fractions_of_the_long_side_and_move_the_picture_right_and_down():
+    source = stripes(RED, GREEN, BLUE, WHITE)
+    right = camera_piece(source, dx=0.25).frame(0.0)  # 2 of the 8 pixels
+    np.testing.assert_allclose(right[:, 3], np.tile([*RED, 1.0], (4, 1)), atol=1e-4)  # source column 1
+    np.testing.assert_allclose(right[:, 4], np.tile([*GREEN, 1.0], (4, 1)), atol=1e-4)  # source column 2
+    assert right[:, :2, 3].max() == 0.0, "what was moved off leaves the frame clear"
+    down = camera_piece(source, dy=0.25).frame(0.0)  # 2 of the 4 rows
+    np.testing.assert_allclose(down[2:], source[:2], atol=1e-4)
+    assert down[:2, :, 3].max() == 0.0
+
+
+def test_a_positive_rotation_turns_the_picture_clockwise():
+    source = np.zeros((4, 4, 4), dtype=np.float32)
+    source[..., 2] = source[..., 3] = 1.0  # blue
+    source[:2, :2] = [1.0, 0.0, 0.0, 1.0]  # red top left
+    shown = camera_piece(source, rotate=90.0).frame(0.0)
+    # a quarter turn clockwise takes the top left corner to the top right
+    np.testing.assert_allclose(shown[0, 3], [1.0, 0.0, 0.0, 1.0], atol=1e-3)
+    np.testing.assert_allclose(shown[0, 0], [0.0, 0.0, 1.0, 1.0], atol=1e-3)
+
+
+def transition_piece(kind: Any, a: np.ndarray, b: np.ndarray) -> btv.Piece:
+    """`a` until two seconds, `b` from one: a one second transition centred on 1.5 covers the overlap."""
+    pytest.importorskip("bullterrier_scene")
+    piece = btv.Piece(btv.Profile(a.shape[1], a.shape[0], 4.0))
+    piece.clip("a", Still(a), end=2.0)
+    piece.clip("b", Still(b), start=1.0, end=3.0)
+    return piece.transition("a", "b", 1.5, 1.0, kind)
+
+
+def test_a_dissolve_midway_is_the_average_of_both_clips():
+    a, b = stripes(RED, GREEN, BLUE, WHITE), stripes(WHITE, BLUE, GREEN, RED)
+    piece = transition_piece(btv.Dissolve(), a, b)
+    np.testing.assert_allclose(piece.frame(1.5), (a + b) / 2, atol=1e-3)
+    np.testing.assert_allclose(piece.frame(1.0), a, atol=1e-4)  # the start is the first clip alone
+    np.testing.assert_allclose(piece.frame(2.0), b, atol=1e-4)  # and the end the second
+
+
+@pytest.mark.parametrize("kind", ["light", "dark"])
+def test_a_sweep_shows_only_the_first_clip_at_its_start_and_only_the_second_at_its_end(kind: str):
+    a, b = stripes(RED, GREEN, BLUE, WHITE), stripes(WHITE, BLUE, GREEN, RED)
+    piece = transition_piece(btv.Sweep(kind), a, b)
+    np.testing.assert_allclose(piece.frame(1.0), a, atol=1e-4)
+    np.testing.assert_allclose(piece.frame(2.0 - 1e-6), b, atol=1e-3)
+    middle = piece.frame(1.5)  # the edge runs left to right: the second clip is behind it, on the left
+    np.testing.assert_allclose(middle[:, 0, :3], b[:, 0, :3], atol=1e-2)
+    np.testing.assert_allclose(middle[:, -1, :3], a[:, -1, :3], atol=1e-2)
+
+
+def test_a_light_sweep_brightens_the_edge_and_a_dark_one_darkens_it():
+    grey = np.full((4, 8, 4), 0.5, dtype=np.float32)
+    grey[..., 3] = 1.0
+    light = transition_piece(btv.Sweep("light", feather=0.5), grey, grey).frame(1.5)
+    dark = transition_piece(btv.Sweep("dark", feather=0.5), grey, grey).frame(1.5)
+    assert light[..., :3].max() > 0.6, "the white bar adds light on the edge"
+    assert dark[..., :3].min() < 0.4, "the black bar takes light off it"
+    assert abs(light[0, 0, 0] - 0.5) < 1e-3, "away from the edge nothing changes"
+
+
+def test_a_piece_with_no_camera_or_transition_never_needs_scene(monkeypatch: pytest.MonkeyPatch):
+    monkeypatch.setitem(sys.modules, "bullterrier_scene", None)  # importing it fails
+    piece, _ = piece_of()
+    piece["a"].map("level", Constant(0.5))
+    assert piece.frame(0.0)[0, 0, 0] == 0.5
+    with pytest.raises(PortError, match="bullterrier_scene is not installed"):
+        piece.camera(zoom=Constant(2.0))
+
+
+def test_a_camera_at_rest_is_never_composed_and_a_moving_one_always(ffmpeg: Path, tmp_path: Path):
+    pytest.importorskip("bullterrier_scene")
+    still = btv.Piece(btv.Profile(WIDTH, HEIGHT, 4.0))
+    still.clip("a", FakeScene(), end=1.0)
+    still.camera(dx=Constant(0.0), zoom=Constant(1.0))
+    assert still.render(tmp_path / "still.mp4").composed == 0
+    moving = btv.Piece(btv.Profile(WIDTH, HEIGHT, 4.0))
+    moving.clip("a", FakeScene(), end=1.0)
+    moving.camera(zoom=lambda t: 1.0 + t)
+    assert moving.render(tmp_path / "moving.mp4") == btv.RenderStats(
+        frames=4, drawn=4, composed=3
+    )  # the first frame's zoom is 1: at rest
+
+
+def test_an_overlap_outside_a_transition_and_a_bad_kind_are_refused_naming_the_fix():
+    piece = btv.Piece(btv.Profile(WIDTH, HEIGHT, 4.0))
+    piece.clip("a", FakeScene(), end=1.5)
+    piece.clip("b", FakeScene(), start=1.0, end=2.0)
+    with pytest.raises(InvalidError, match=r"overlap.*transition\(\"a\", \"b\""):
+        piece.frame(0.0)
+    with pytest.raises(InvalidError, match=r"light.*dark"):
+        btv.Sweep("grey")
+    with pytest.raises(InvalidError, match="Cut"):
+        piece.transition("a", "b", 1.25, 0.5, "dissolve")  # type: ignore[arg-type]
+    piece.transition("a", "b", 1.25, 0.5)  # a Cut covers the overlap and needs no scene
+    assert piece.frame(0.0).shape == (HEIGHT, WIDTH, 4)

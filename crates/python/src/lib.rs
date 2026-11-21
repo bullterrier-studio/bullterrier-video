@@ -16,7 +16,7 @@ use pyo3::prelude::*;
 use pyo3::sync::MutexExt;
 use pyo3::types::PyDict;
 
-use adapters::{PyMusic, PyPicture, PySignal, PySound, value_of};
+use adapters::{PyCompose, PyMusic, PyPicture, PySignal, PySound, value_of};
 use error::{invalid, raised};
 
 /// bullterrier-video's Rust core.
@@ -384,14 +384,77 @@ impl Piece {
             .map_err(|e| raised(py, &e))
     }
 
-    /// Renders the piece into `path` on `workers` threads: `(frames written, frames drawn)`.
+    /// Renders the piece into `path` on `workers` threads: `(frames written, frames drawn, frames composed)`.
     #[expect(clippy::needless_pass_by_value, reason = "PyO3 extracts a path by value")]
-    fn render(&self, py: Python<'_>, path: PathBuf, workers: usize) -> PyResult<(usize, usize)> {
+    fn render(&self, py: Python<'_>, path: PathBuf, workers: usize) -> PyResult<(usize, usize, usize)> {
         let piece = self.locked(py).clone();
         let stats = py
             .detach(|| piece.render(&Ffmpeg::discover(), &path, workers))
             .map_err(|e| raised(py, &e))?;
-        Ok((stats.frames, stats.drawn))
+        Ok((stats.frames, stats.drawn, stats.composed))
+    }
+
+    /// Gives the piece its compose (an object with `compose(layers)`), which a camera and a transition need.
+    fn compose(&self, py: Python<'_>, compose: Py<PyAny>) {
+        self.locked(py).compose(Arc::new(PyCompose(compose)));
+    }
+
+    /// The camera: each of `dx`, `dy`, `zoom` and `rotate` a signal (an object with `sample(times)`) or `None` for at rest.
+    fn camera(
+        &self,
+        py: Python<'_>,
+        dx: Option<Py<PyAny>>,
+        dy: Option<Py<PyAny>>,
+        zoom: Option<Py<PyAny>>,
+        rotate: Option<Py<PyAny>>,
+    ) -> PyResult<()> {
+        let signal = |given: Option<Py<PyAny>>| given.map(|s| Arc::new(PySignal(s)) as Arc<dyn core::ports::Signal>);
+        self.locked(py)
+            .camera(signal(dx), signal(dy), signal(zoom), signal(rotate))
+            .map_err(|e| raised(py, &e))
+    }
+
+    /// A transition from clip `a` to clip `b` centred on `at`, `length` seconds long: `kind` is `cut`, `dissolve`, `light` or
+    /// `dark` (a sweep at `angle` degrees with an edge `feather` of the long side wide).
+    #[pyo3(signature = (a, b, at, length, kind, angle=0.0, feather=0.15))]
+    #[expect(
+        clippy::too_many_arguments,
+        reason = "the call's own parameters, as the Python method lists them"
+    )]
+    fn transition(
+        &self,
+        py: Python<'_>,
+        a: &str,
+        b: &str,
+        at: f64,
+        length: f64,
+        kind: &str,
+        angle: f64,
+        feather: f64,
+    ) -> PyResult<()> {
+        let kind = match kind {
+            "cut" => core::TransitionKind::Cut,
+            "dissolve" => core::TransitionKind::Dissolve,
+            "light" => core::TransitionKind::Sweep {
+                edge: core::Edge::Light,
+                angle,
+                feather,
+            },
+            "dark" => core::TransitionKind::Sweep {
+                edge: core::Edge::Dark,
+                angle,
+                feather,
+            },
+            other => {
+                return Err(invalid(
+                    py,
+                    format!("a transition is cut, dissolve, light or dark, got `{other}`"),
+                ));
+            }
+        };
+        self.locked(py)
+            .transition(a, b, at, length, kind)
+            .map_err(|e| raised(py, &e))
     }
 
     /// The profile the piece is written with.

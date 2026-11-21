@@ -18,8 +18,10 @@ import numpy as np
 
 from ._native import _core
 from .adapters.audio import AudioMusic, AudioSound
+from .adapters.scene_compose import SceneCompose
 from .errors import BullterrierVideoError, InvalidError
 from .music import Music
+from .transitions import Cut, Dissolve, Sweep
 
 if TYPE_CHECKING:
     from collections.abc import Callable, Mapping, Sequence
@@ -66,14 +68,23 @@ def _address(key: str | Addressed) -> str:
 
 @dataclass(frozen=True)
 class RenderStats:
-    """What a render did: the `frames` it wrote and how many of them it had to draw.
+    """What a render did: the `frames` it wrote, how many of them it had to draw and how many of those it composed.
 
-    A frame whose clip and values equal the frame before it is not drawn again, so `drawn` is less than `frames`
-    for a piece that holds still (a poster that pauses, a gap, a title that sits).
+    A frame whose clips, values and camera equal the frame before it is not drawn again, so `drawn` is less than
+    `frames` for a piece that holds still (a poster that pauses, a gap, a title that sits). `composed` counts the drawn
+    frames that were put together by the compose adapter: a transition, or a camera that is not at rest.
     """
 
     frames: int
     drawn: int
+    composed: int
+
+
+def _signal(signal: Any) -> Any:
+    """`signal` as an object with `sample(times)`: a plain function of the times becomes one."""
+    if callable(signal) and not hasattr(signal, "sample"):
+        return _FunctionSignal(signal)
+    return signal
 
 
 class _FunctionSignal:
@@ -108,9 +119,7 @@ class Clip:
         is on from one half; a pixel value is never scaled. A text, colour, choice or picture is `set`, not mapped. The
         address is refused, with the nearest names, when the picture lacks it or it is mapped or set already.
         """
-        if callable(signal) and not hasattr(signal, "sample"):
-            signal = _FunctionSignal(signal)
-        self._native.map(self._name, _address(address), signal, lag)
+        self._native.map(self._name, _address(address), _signal(signal), lag)
         return self
 
     def set(self, values: Mapping[_Key, object]) -> Clip:
@@ -174,8 +183,7 @@ class Piece:
         does not depend on the number. A frame equal to the one before it is not drawn again. The file appears only when
         ffmpeg succeeded. ffmpeg is the program named by `BT_VIDEO_FFMPEG`, else `ffmpeg` on `PATH`.
         """
-        frames, drawn = self._native.render(os.fspath(path), DEFAULT_WORKERS if workers is None else workers)
-        return RenderStats(frames, drawn)
+        return RenderStats(*self._native.render(os.fspath(path), DEFAULT_WORKERS if workers is None else workers))
 
     def draft(self, scale: float = 0.5, *, fps: float | None = None) -> Piece:
         """The same piece smaller (each side `scale` times, to the nearest even number) and, with `fps`, at that rate.
@@ -203,6 +211,46 @@ class Piece:
         inside the piece (its last frame is at `duration - 1/fps`).
         """
         self._native.sheet(os.fspath(path), list(at), width, columns)
+
+    def camera(self, dx: Any = None, dy: Any = None, zoom: Any = None, rotate: Any = None) -> Piece:
+        """Moves the finished frame: each argument a signal (anything `Clip.map` takes), or `None` to stay at rest.
+
+        `dx` and `dy` are fractions of the frame's long side (so a draft and a final render agree), `zoom` is a scale
+        about the centre (1: none) and `rotate` is degrees clockwise. Shake is a sum of signals. A camera is one move
+        of every layer of the frame: nothing is drawn again, so a scene's cache holds, and a frame whose camera is at
+        rest is not composed at all. A second call replaces the camera. Needs `bullterrier_scene`: a `PortError` says so
+        when it is missing.
+        """
+        self._with_compose()
+        self._native.camera(*(None if s is None else _signal(s) for s in (dx, dy, zoom, rotate)))
+        return self
+
+    def transition(self, a: str, b: str, at: float, length: float, kind: Cut | Dissolve | Sweep | None = None) -> Piece:
+        """From clip `a` to clip `b`, centred on `at` seconds, `length` seconds long; `kind` is a `Cut` (the default), a
+        `Dissolve` or a `Sweep`.
+
+        Both clips are drawn during the window, outside their own spans if need be (signals are total). Clips may
+        overlap only inside a transition that covers the overlap; two transitions do not overlap each other. Needs
+        `bullterrier_scene` for a `Dissolve` or a `Sweep`.
+        """
+        match kind if kind is not None else Cut():
+            case Cut():
+                spec: tuple[Any, ...] = ("cut",)
+            case Dissolve():
+                self._with_compose()
+                spec = ("dissolve",)
+            case Sweep(kind=edge, angle=angle, feather=feather):
+                self._with_compose()
+                spec = (edge, angle, feather)
+            case other:
+                message = f"a transition kind is Cut(), Dissolve() or Sweep(...), got {other!r}"
+                raise InvalidError(message)
+        self._native.transition(a, b, at, length, *spec)
+        return self
+
+    def _with_compose(self) -> None:
+        """Gives the piece its compose adapter, made when a call first needs it (scene is imported then, once)."""
+        self._native.compose(SceneCompose())
 
     def copy(self) -> Piece:
         """An independent piece sharing the pictures, signals and song: nothing the copy changes touches this one."""

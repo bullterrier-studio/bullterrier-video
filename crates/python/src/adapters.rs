@@ -4,8 +4,8 @@
 use std::collections::BTreeMap;
 use std::sync::OnceLock;
 
-use bullterrier_video::ports::{Music, Picture, Signal, Sound};
-use bullterrier_video::{Band, Error, Frame, Hit, Kind, Moment, Parameter, Seconds, Section, Value, Values};
+use bullterrier_video::ports::{Blend, Compose, Layer, Music, Picture, Signal, Sound};
+use bullterrier_video::{Band, Error, Frame, Hit, Kind, Moment, Parameter, Seconds, Section, Value, Values, View};
 use numpy::{PyArray1, PyArrayMethods, PyReadonlyArray1, PyReadonlyArrayDyn, PyUntypedArrayMethods};
 use pyo3::prelude::*;
 use pyo3::types::{PyBool, PyDict, PyFloat, PyInt, PyString};
@@ -126,22 +126,63 @@ impl Picture for PyPicture {
 
 /// A float32 `(height, width, 4)` array as a frame.
 pub(crate) fn frame_of(array: &Bound<'_, PyAny>) -> Result<Frame, Error> {
+    frame_from(array, "picture", "a picture must draw")
+}
+
+/// A float32 `(height, width, 4)` array as a frame, refused as `port` saying `what` is wanted.
+fn frame_from(array: &Bound<'_, PyAny>, port: &'static str, what: &str) -> Result<Frame, Error> {
     let found = array
         .extract::<PyReadonlyArrayDyn<'_, f32>>()
         .map_err(|_| Error::Port {
-            port: "picture",
-            message: "a picture must draw a float32 array of shape (height, width, 4)".into(),
+            port,
+            message: format!("{what} a float32 array of shape (height, width, 4)"),
         })?;
     let &[height, width, 4] = found.shape() else {
         return Err(Error::Port {
-            port: "picture",
-            message: format!("a picture must draw shape (height, width, 4), got {:?}", found.shape()),
+            port,
+            message: format!("{what} shape (height, width, 4), got {:?}", found.shape()),
         });
     };
     let pixels = found
         .as_slice()
         .map_or_else(|_| found.as_array().iter().copied().collect(), <[f32]>::to_vec);
     Frame::new(width, height, pixels)
+}
+
+/// A Python compose: an object with `compose(layers)`, each layer `(frame, (dx, dy, zoom, rotate), opacity, blend, mask)`, the
+/// frame a float32 `(height, width, 4)` array and the mask a float32 `(height, width)` array or `None`; it returns the frame.
+pub(crate) struct PyCompose(pub(crate) Py<PyAny>);
+
+impl Compose for PyCompose {
+    fn compose(&self, layers: &[Layer<'_>]) -> Result<Frame, Error> {
+        Python::attach(|py| {
+            let fail = |e: PyErr| from_python("compose", py, &e);
+            let mut given = Vec::with_capacity(layers.len());
+            for layer in layers {
+                let View { dx, dy, zoom, rotate } = layer.view;
+                let blend = match layer.blend {
+                    Blend::Screen => "screen",
+                    Blend::Multiply => "multiply",
+                    _ => "normal",
+                };
+                let mask = layer
+                    .mask
+                    .map(|mask| {
+                        // the red channel as a map: one value to a pixel
+                        PyArray1::from_iter(py, mask.pixels().iter().step_by(4).copied())
+                            .reshape([mask.height(), mask.width()])
+                    })
+                    .transpose()
+                    .map_err(fail)?;
+                let frame = PyArray1::from_slice(py, layer.frame.pixels())
+                    .reshape([layer.frame.height(), layer.frame.width(), 4])
+                    .map_err(fail)?;
+                given.push((frame, (dx, dy, zoom, rotate), layer.opacity, blend, mask));
+            }
+            let done = self.0.bind(py).call_method1("compose", (given,)).map_err(fail)?;
+            frame_from(&done, "compose", "compose must give")
+        })
+    }
 }
 
 /// A Python signal: an object with `sample(times)` returning an array.
