@@ -57,7 +57,7 @@ piece.render("mill.mp4")
 | `Clip.swap(picture)` | another picture in the clip; refused, naming the address, if it lacks one that is set or mapped (nothing changes then) |
 
 **Music** (`Piece.song` returns it; every time is in piece seconds, so a clip's `start` can be `m.drop - 1.0`): `duration`, `tempo`
-(beats a minute), `beats`, `downbeats`, `drop`, `kicks`, `snares`, `hats`, `sections` (each `start`, `end`, `label`), `band(name,
+(beats a minute), `beats`, `downbeats`, `bars` (each `start`, `end`; the last ends with the song), `phrases(bars=4)` (runs of bars; the last may be shorter; under one is refused), `drop`, `kicks`, `snares`, `hats`, `sections` (each `start`, `end`, `label`), `band(name,
 *, over=None) -> Levels`. It is **plain data**, never control's types: `Levels` is `values`, `rate` and `start`, and the caller makes a
 signal with `btc.from_values(lv.values, lv.rate, start=lv.start)`. `band(..., over=(a, b))` scales the levels to the song's range
 inside that span, as the mill needs for the bass after the drop. A measure the song cannot give raises `InvalidError` naming it:

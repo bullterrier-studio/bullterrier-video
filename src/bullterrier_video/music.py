@@ -5,13 +5,15 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, NamedTuple
 
+from .errors import InvalidError
+
 if TYPE_CHECKING:
     import numpy as np
     from numpy.typing import NDArray
 
     from ._native._core import Music as _Music
 
-__all__ = ["Levels", "Music", "Section"]
+__all__ = ["Bar", "Levels", "Music", "Phrase", "Section"]
 
 
 class Section(NamedTuple):
@@ -20,6 +22,20 @@ class Section(NamedTuple):
     start: float
     end: float
     label: str
+
+
+class Bar(NamedTuple):
+    """One bar: from its downbeat to the next, the last to the end of the song."""
+
+    start: float
+    end: float
+
+
+class Phrase(NamedTuple):
+    """A run of whole bars; the last phrase of a song may hold fewer."""
+
+    start: float
+    end: float
 
 
 @dataclass(frozen=True)
@@ -63,6 +79,20 @@ class Music:
     def downbeats(self) -> list[float]:
         """The first beat of each bar."""
         return self._native.downbeats()
+
+    @property
+    def bars(self) -> list[Bar]:
+        """Each bar from its downbeat to the next; the last ends where the song does."""
+        starts = self.downbeats
+        return [Bar(a, b) for a, b in zip(starts, [*starts[1:], self.duration], strict=True)]
+
+    def phrases(self, bars: int = 4) -> list[Phrase]:
+        """The bars in runs of `bars` (four by default); the last run holds what is left. Refused under one bar."""
+        if bars < 1:
+            message = f"a phrase is at least 1 bar, not {bars}"
+            raise InvalidError(message)
+        every = self.bars
+        return [Phrase(every[i].start, every[min(i + bars, len(every)) - 1].end) for i in range(0, len(every), bars)]
 
     @property
     def drop(self) -> float:

@@ -337,6 +337,16 @@ def test_the_song_is_cut_to_its_span_and_everything_it_knows_is_in_piece_seconds
     assert music.duration == 10.0
 
 
+def test_bars_run_downbeat_to_downbeat_to_the_end_and_phrases_group_them(audio: FakeSound):
+    piece, _ = piece_of(end=10.0)
+    music = piece.song(audio, btv.between(10.0, 20.0))
+    assert [tuple(b) for b in music.bars] == [(0.0, 2.0), (2.0, 4.0), (4.0, 6.0), (6.0, 8.0), (8.0, 10.0)]
+    assert [tuple(p) for p in music.phrases(bars=4)] == [(0.0, 8.0), (8.0, 10.0)], "the last phrase may be short"
+    assert [tuple(p) for p in music.phrases(bars=1)] == [tuple(b) for b in music.bars]
+    with pytest.raises(InvalidError, match="at least 1 bar"):
+        music.phrases(bars=0)
+
+
 def test_levels_are_plain_data_scaled_over_the_span_and_over_a_stretch(audio: FakeSound):
     piece, _ = piece_of(end=10.0)
     music = piece.song(audio, btv.between(10.0, 20.0))
