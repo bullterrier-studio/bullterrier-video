@@ -374,3 +374,90 @@ fn a_picture_whose_range_is_backwards_or_not_a_number_is_refused_when_it_is_desc
         "a range of one value is allowed"
     );
 }
+
+// ---- colours: a ramp maps a signal onto a colour ----
+
+use bullterrier_video::{Ramp, parse_hex};
+
+fn ramp(stops: &[&str]) -> Ramp {
+    Ramp::new(
+        stops
+            .iter()
+            .map(|s| parse_hex(s).unwrap_or_else(|e| unreachable!("{e}")))
+            .collect(),
+    )
+    .unwrap_or_else(|e| unreachable!("{e}"))
+}
+
+fn near(got: [f64; 3], want: [f64; 3]) -> bool {
+    got.iter().zip(want).all(|(g, w)| (g - w).abs() < 1e-7)
+}
+
+#[test]
+fn a_ramp_starts_and_ends_on_its_stops_exactly() {
+    let r = ramp(&["#3060ff", "#ff2020", "#00ff00"]);
+    assert_eq!(r.at(0.0), parse_hex("#3060ff").unwrap_or_default());
+    assert_eq!(r.at(0.5), parse_hex("#ff2020").unwrap_or_default(), "a middle stop");
+    assert_eq!(r.at(1.0), parse_hex("#00ff00").unwrap_or_default());
+    assert_eq!(r.at(-3.0), r.at(0.0), "held below");
+    assert_eq!(r.at(7.0), r.at(1.0), "held above");
+}
+
+// Oracle: the same mix done outside (numpy, the published OKLab matrices, the exact sRGB transfer).
+#[test]
+fn the_midpoint_is_the_oklab_midpoint_not_the_channel_mean() {
+    let mid = ramp(&["#ff0000", "#0000ff"]).at(0.5);
+    assert!(
+        near(mid, [0.550_441_062_288_394_6, 0.325_620_683_214_130_46, 0.636_500_699_513_632_2]),
+        "{mid:?}"
+    );
+    // black to white: mid grey is OKLab lightness one half, linear 1/8, which sRGB encodes by the exact curve
+    let grey = 1.055 * 0.125_f64.powf(1.0 / 2.4) - 0.055;
+    assert!(near(ramp(&["#000", "#fff"]).at(0.5), [grey; 3]), "{grey}");
+}
+
+#[test]
+fn lightness_runs_one_way_from_dark_to_light() {
+    let r = ramp(&["#000000", "#ff2020", "#ffffff"]);
+    let sum = |p: f64| r.at(p).iter().sum::<f64>();
+    let along: Vec<f64> = (0..=40).map(|k| sum(f64::from(k) / 40.0)).collect();
+    assert!(along.windows(2).all(|w| w[0] <= w[1] + 1e-12), "{along:?}");
+}
+
+#[test]
+fn a_ramp_needs_two_stops_and_real_colours() {
+    assert!(matches!(Ramp::new(vec![[0.0; 3]]), Err(Error::Invalid { .. })));
+    assert!(matches!(Ramp::new(vec![[0.0; 3], [1.5, 0.0, 0.0]]), Err(Error::Invalid { .. })));
+    for bad in ["red", "#12", "#ggg", "123456", "#12345é"] {
+        assert!(matches!(parse_hex(bad), Err(Error::Invalid { .. })), "{bad}");
+    }
+}
+
+#[test]
+fn a_mapped_ramp_gives_a_colour_of_three_floats_each_frame() {
+    let mut clip = clip_with("lamp.color", Kind::Color);
+    let r = ramp(&["#ff0000", "#0000ff"]);
+    clip.map_ramp("lamp.color", r.clone(), Arc::new(FnSignal(Box::new(|t| t / 2.0))), 0.0)
+        .unwrap_or_else(|e| unreachable!("{e}"));
+    let frames = clip.values(&[0.0, 1.0, 2.0]).unwrap_or_else(|e| unreachable!("{e}"));
+    let got: Vec<Value> = frames.into_iter().map(|mut f| f.remove("lamp.color").unwrap_or(Value::Bool(false))).collect();
+    assert_eq!(got, vec![Value::Color(r.at(0.0)), Value::Color(r.at(0.5)), Value::Color(r.at(1.0))]);
+}
+
+#[test]
+fn a_ramp_is_refused_for_a_number_and_a_bare_signal_for_a_colour() {
+    let mut clip = Clip::new(
+        "c",
+        Arc::new(Described(vec![
+            parameter("n", number(0.0, 1.0, false, false)),
+            parameter("lamp.color", Kind::Color),
+        ])),
+        0.0,
+        None,
+    )
+    .unwrap_or_else(|e| unreachable!("{e}"));
+    let on_number = clip.map_ramp("n", ramp(&["#000", "#fff"]), constant(0.5), 0.0);
+    assert!(matches!(&on_number, Err(Error::Invalid { message }) if message.contains("`n`") && message.contains("number")), "{on_number:?}");
+    let bare = clip.map("lamp.color", constant(0.5), 0.0);
+    assert!(matches!(&bare, Err(Error::Invalid { message }) if message.contains("`lamp.color`") && message.contains("Ramp")), "{bare:?}");
+}

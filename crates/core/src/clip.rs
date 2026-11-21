@@ -3,6 +3,7 @@
 use std::collections::BTreeMap;
 use std::sync::Arc;
 
+use crate::colour::Ramp;
 use crate::error::Error;
 use crate::ports::{Picture, Signal};
 use crate::types::{Kind, Parameter, Seconds, Value, Values};
@@ -12,6 +13,8 @@ use crate::types::{Kind, Parameter, Seconds, Value, Values};
 struct Mapping {
     signal: Arc<dyn Signal>,
     lag: Seconds,
+    /// For a colour: the ramp the signal's value picks a position on.
+    ramp: Option<Ramp>,
 }
 
 /// A picture placed on the timeline from `start` to `end` (`None`: to the next clip or the end of the piece).
@@ -88,12 +91,37 @@ impl Clip {
     /// already mapped or already set, or `lag` is not finite.
     pub fn map(&mut self, address: &str, signal: Arc<dyn Signal>, lag: Seconds) -> Result<(), Error> {
         let kind = self.kind_of(address)?;
+        if matches!(kind, Kind::Color) {
+            return Err(invalid(format!(
+                "`{address}` of clip `{}` is a colour, which a bare signal cannot drive: map it with a ramp, btv.Ramp(stop, stop, signal)",
+                self.name
+            )));
+        }
         if !matches!(kind, Kind::Number { .. } | Kind::Bool) {
             return Err(invalid(format!(
                 "`{address}` of clip `{}` is not a number or a bool, so a signal cannot drive it: set it",
                 self.name
             )));
         }
+        self.insert_mapping(address, Mapping { signal, lag, ramp: None })
+    }
+
+    /// Drives the colour at `address`: `signal`, read `lag` seconds late, picks the position on `ramp`.
+    ///
+    /// # Errors
+    /// [`Error::Invalid`] when the address is not the picture's, is not a colour, is already mapped or set, or `lag` is not finite.
+    pub fn map_ramp(&mut self, address: &str, ramp: Ramp, signal: Arc<dyn Signal>, lag: Seconds) -> Result<(), Error> {
+        if !matches!(self.kind_of(address)?, Kind::Color) {
+            return Err(invalid(format!(
+                "`{address}` of clip `{}` is not a colour, so a ramp cannot drive it: a number or a bool takes a plain signal, the rest are set",
+                self.name
+            )));
+        }
+        self.insert_mapping(address, Mapping { signal, lag, ramp: Some(ramp) })
+    }
+
+    fn insert_mapping(&mut self, address: &str, mapping: Mapping) -> Result<(), Error> {
+        let lag = mapping.lag;
         if !lag.is_finite() {
             return Err(invalid(format!("lag must be a finite number of seconds, got {lag}")));
         }
@@ -108,7 +136,7 @@ impl Clip {
                 }
             )));
         }
-        self.mappings.insert(address.into(), Mapping { signal, lag });
+        self.mappings.insert(address.into(), mapping);
         Ok(())
     }
 
@@ -181,9 +209,14 @@ impl Clip {
             }
             let kind = self.kind_of(address)?;
             for ((frame, value), t) in frames.iter_mut().zip(raw).zip(times) {
+                let driven = match &mapping.ramp {
+                    Some(ramp) if value.is_finite() => Ok(Value::Color(ramp.at(value))),
+                    Some(_) => Err(invalid(format!("the value is {value}"))),
+                    None => drive(kind, value),
+                };
                 frame.insert(
                     address.clone(),
-                    drive(kind, value).map_err(|e| invalid(format!("`{address}` at {t} s: {e}")))?,
+                    driven.map_err(|e| invalid(format!("`{address}` at {t} s: {e}")))?,
                 );
             }
         }
@@ -206,6 +239,7 @@ impl Clip {
         match (kind, value) {
             (Kind::Number { .. } | Kind::Bool, Value::Number(n)) => drive(kind, n),
             (Kind::Bool, Value::Bool(b)) => Ok(Value::Bool(b)),
+            (Kind::Color, Value::Color(c)) => Ok(Value::Color(c)),
             (Kind::Text | Kind::Color, Value::Text(t)) => Ok(Value::Text(t)),
             (Kind::Choice { options }, Value::Text(t)) if options.contains(&t) => Ok(Value::Text(t)),
             (Kind::Choice { options }, Value::Text(_)) => Err(bad(&format!("one of {}", options.join(", ")))),

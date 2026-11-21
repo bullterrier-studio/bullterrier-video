@@ -111,6 +111,8 @@ pub enum Value {
     Bool(bool),
     /// Text: a text, a colour (`#rrggbb`) or a choice, whichever the parameter's [`Kind`] says.
     Text(String),
+    /// A colour: sRGB-encoded red, green, blue, each `0..=1`, never rounded to 8 bits on its way to the picture.
+    Color([f64; 3]),
     /// A picture.
     Picture(Frame),
 }

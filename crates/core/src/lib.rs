@@ -7,6 +7,7 @@
 #![forbid(unsafe_code)]
 
 mod clip;
+mod colour;
 mod error;
 mod ffmpeg;
 mod piece;
@@ -19,6 +20,7 @@ mod transition;
 mod types;
 
 pub use clip::Clip;
+pub use colour::{Ramp, Rgb, parse_hex};
 pub use error::Error;
 pub use ffmpeg::Ffmpeg;
 pub use piece::{FRAMES_AHEAD_PER_WORKER, Piece, RenderStats, SHEET_GAP};
