@@ -487,8 +487,12 @@ fn a_picture_that_panics_is_an_error_naming_it_and_never_a_hang() {
 const GAP: usize = bullterrier_video::SHEET_GAP;
 
 fn sheet_of(piece: &Piece, at: &[f64], width: u32) -> Result<Frame, Error> {
+    sheet_in(piece, at, width, None)
+}
+
+fn sheet_in(piece: &Piece, at: &[f64], width: u32, columns: Option<usize>) -> Result<Frame, Error> {
     let capture = Capture::default();
-    piece.sheet(&capture, Path::new("sheet.png"), at, width)?;
+    piece.sheet(&capture, Path::new("sheet.png"), at, width, columns)?;
     assert_eq!(
         *capture.path.lock().unwrap_or_else(PoisonError::into_inner),
         Some(Path::new("sheet.png").to_path_buf())
@@ -558,6 +562,39 @@ fn a_sheet_that_cannot_be_made_is_refused_naming_why() {
             "{t} s is outside the two-second piece"
         );
     }
+}
+
+#[test]
+fn a_sheet_in_columns_wraps_into_rows_and_pads_the_last_row_with_the_background() {
+    let piece = piece(4.0, Flat::new().0);
+    let at = [0.0, 0.25, 0.5, 0.75, 1.0];
+    let sheet = sheet_in(&piece, &at, 6, Some(2)).unwrap_or_else(|e| unreachable!("{e}"));
+    assert_eq!(
+        (sheet.width(), sheet.height()),
+        (2 * 6 + GAP, 3 * 6 + 2 * GAP),
+        "3 rows of 2 columns"
+    );
+    let last_row = (2 * (6 + GAP)) * sheet.width() * 4;
+    let second_cell = last_row + (6 + GAP) * 4;
+    assert_eq!(
+        sheet.pixels()[second_cell..second_cell + 4],
+        sheet.pixels()[4 * 6..4 * 6 + 4],
+        "the missing sixth cell is the gap's colour"
+    );
+    assert!(sheet_in(&piece, &at, 6, Some(0)).is_err(), "no columns");
+}
+
+#[test]
+fn a_moment_at_the_end_is_refused_naming_the_last_frame_which_is_accepted() {
+    let piece = piece(4.0, Flat::new().0);
+    assert!(
+        sheet_of(&piece, &[1.75], 6).is_ok(),
+        "the last frame of the two-second piece"
+    );
+    let Err(Error::Invalid { message }) = sheet_of(&piece, &[2.0], 6) else {
+        unreachable!("accepted")
+    };
+    assert!(message.contains("1.75"), "{message}");
 }
 
 #[test]

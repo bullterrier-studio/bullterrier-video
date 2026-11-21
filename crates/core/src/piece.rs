@@ -372,22 +372,31 @@ impl Piece {
     }
 
     /// A contact sheet: the piece at each of the moments `at` (seconds), every one drawn `width` pixels along its long side, side by
-    /// side with [`SHEET_GAP`] between, written as one picture to `path` through `encoder`. A moment no clip draws is a black cell.
+    /// side with [`SHEET_GAP`] between (or, with `columns`, that many to a row, the last row padded with the gap's colour),
+    /// written as one picture to `path` through `encoder`. A moment no clip draws is a black cell.
     ///
     /// # Errors
-    /// [`Error::Invalid`] when `at` is empty, a moment is not inside the piece, or `width` is under two pixels;
+    /// [`Error::Invalid`] when `at` is empty, a moment is not inside the piece, `width` is under two pixels or `columns` is 0;
     /// [`Error::Port`] when the pictures draw cells of different sizes, and the pictures' and the encoder's errors.
-    pub fn sheet(&self, encoder: &dyn Encode, path: &Path, at: &[Seconds], width: u32) -> Result<(), Error> {
-        if at.is_empty() || width < 2 {
+    pub fn sheet(
+        &self,
+        encoder: &dyn Encode,
+        path: &Path,
+        at: &[Seconds],
+        width: u32,
+        columns: Option<usize>,
+    ) -> Result<(), Error> {
+        if at.is_empty() || width < 2 || columns == Some(0) {
             return Err(invalid(format!(
-                "a sheet needs at least one moment and cells of two pixels or more, got {} and {width}",
+                "a sheet needs at least one moment, cells of two pixels or more and one column or more, got {} moments, {width} pixels and {columns:?} columns",
                 at.len()
             )));
         }
         let duration = self.duration()?;
         if let Some(t) = at.iter().find(|t| !(t.is_finite() && **t >= 0.0 && **t < duration)) {
             return Err(invalid(format!(
-                "the moment {t} s is not inside the piece, which lasts {duration} s"
+                "the moment {t} s is not inside the piece, which lasts {duration} s: its last frame is at {} s",
+                duration - 1.0 / self.profile.fps()
             )));
         }
         let layout = self.layout()?;
@@ -429,7 +438,7 @@ impl Piece {
                 )
             })
             .collect::<Result<Vec<Frame>, Error>>()?;
-        let sheet = tile(&cells)?;
+        let sheet = tile(&cells, columns.unwrap_or(cells.len()))?;
         let job = Job {
             path,
             fps: 1.0,
@@ -549,8 +558,10 @@ fn invalid(message: String) -> Error {
     Error::Invalid { message }
 }
 
-/// The cells in one row, `SHEET_GAP` apart.
-fn tile(cells: &[Frame]) -> Result<Frame, Error> {
+/// The cells in rows of `columns`, `SHEET_GAP` apart; the last row is padded with the background.
+fn tile(cells: &[Frame], columns: usize) -> Result<Frame, Error> {
+    let columns = columns.min(cells.len());
+    let rows = cells.len().div_ceil(columns);
     let (cell_width, height) = (cells[0].width(), cells[0].height());
     if let Some(odd) = cells.iter().find(|c| (c.width(), c.height()) != (cell_width, height)) {
         return Err(Error::Port {
@@ -562,15 +573,17 @@ fn tile(cells: &[Frame]) -> Result<Frame, Error> {
             ),
         });
     }
-    let width = cells.len() * cell_width + (cells.len() - 1) * SHEET_GAP;
-    let mut pixels = SHEET_BACKGROUND.repeat(width * height);
+    let width = columns * cell_width + (columns - 1) * SHEET_GAP;
+    let total = rows * height + (rows - 1) * SHEET_GAP;
+    let mut pixels = SHEET_BACKGROUND.repeat(width * total);
     for (n, cell) in cells.iter().enumerate() {
-        let left = n * (cell_width + SHEET_GAP);
+        let left = (n % columns) * (cell_width + SHEET_GAP);
+        let top = (n / columns) * (height + SHEET_GAP);
         for row in 0..height {
             let from = row * cell_width * 4;
-            let to = (row * width + left) * 4;
+            let to = ((top + row) * width + left) * 4;
             pixels[to..to + cell_width * 4].copy_from_slice(&cell.pixels()[from..from + cell_width * 4]);
         }
     }
-    Frame::new(width, height, pixels)
+    Frame::new(width, total, pixels)
 }

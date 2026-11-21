@@ -420,6 +420,18 @@ def test_a_sheet_is_the_chosen_moments_side_by_side(ffmpeg: Path, tmp_path: Path
     assert pixel(cell_width + gap) == 32768, "the level at 0.5 s"
 
 
+def test_a_sheet_in_columns_wraps_into_rows(ffmpeg: Path, tmp_path: Path):
+    piece, _ = piece_of()
+    out = tmp_path / "sheet.png"
+    piece.sheet(out, [0.0, 0.25, 0.5], width=6, columns=2)
+    gap = 6
+    assert len(out.read_bytes()) == (2 * WIDTH + gap) * (2 * HEIGHT + gap) * 6
+    with pytest.raises(InvalidError, match="column"):
+        piece.sheet(out, [0.0], columns=0)
+    with pytest.raises(InvalidError, match=r"last frame is at 0\.75"):
+        piece.sheet(out, [1.0])
+
+
 def test_a_sheet_that_cannot_be_made_is_an_invalid_error(tmp_path: Path):
     piece, _ = piece_of()
     with pytest.raises(InvalidError, match="at least one moment"):

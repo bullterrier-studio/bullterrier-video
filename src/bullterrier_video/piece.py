@@ -186,13 +186,23 @@ class Piece:
         """
         return Piece._made(self._native.draft(scale, fps))
 
-    def sheet(self, path: str | os.PathLike[str], at: Sequence[float], width: int = DEFAULT_SHEET_WIDTH) -> None:
+    def sheet(
+        self,
+        path: str | os.PathLike[str],
+        at: Sequence[float],
+        width: int = DEFAULT_SHEET_WIDTH,
+        *,
+        columns: int | None = None,
+    ) -> None:
         """Writes a contact sheet: the piece at each moment in `at` (seconds), side by side, to the picture `path`.
 
+        With `columns` the cells wrap into rows of that many (the last row padded with the sheet's grey).
+
         Each cell is drawn `width` pixels along its long side, so a sheet takes a few frames' time, not a render's. A
-        moment no clip draws is a black cell. Refused if `at` is empty or a moment is not inside the piece.
+        moment no clip draws is a black cell. Refused if `at` is empty, `columns` is under one, or a moment is not
+        inside the piece (its last frame is at `duration - 1/fps`).
         """
-        self._native.sheet(os.fspath(path), list(at), width)
+        self._native.sheet(os.fspath(path), list(at), width, columns)
 
     def copy(self) -> Piece:
         """An independent piece sharing the pictures, signals and song: nothing the copy changes touches this one."""
