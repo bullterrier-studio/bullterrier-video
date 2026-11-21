@@ -1,4 +1,8 @@
 //! The camera and transitions through a counting fake of the compose port: what is composed, when, and with what.
+#![expect(
+    clippy::float_cmp,
+    reason = "the fakes' levels and masks are exact: 0, 1 and the values written"
+)]
 
 use std::path::Path;
 use std::sync::{Arc, Mutex, PoisonError};
@@ -122,8 +126,8 @@ fn one_clip() -> (Piece, Arc<Tape>) {
     (piece, tape)
 }
 
-fn signal(function: impl Fn(Seconds) -> f64 + Send + Sync + 'static) -> Option<Arc<dyn Signal>> {
-    Some(Arc::new(FnSignal(Box::new(function))))
+fn signal(function: impl Fn(Seconds) -> f64 + Send + Sync + 'static) -> Arc<dyn Signal> {
+    Arc::new(FnSignal(Box::new(function)))
 }
 
 fn render(piece: &Piece) -> (RenderStats, Vec<f32>) {
@@ -151,7 +155,12 @@ fn no_camera_and_an_identity_camera_never_call_compose() {
 
     let (mut piece, tape) = one_clip();
     piece
-        .camera(signal(|_| 0.0), None, signal(|_| 1.0), signal(|_| 0.0))
+        .camera(
+            Some(signal(|_| 0.0)),
+            None,
+            Some(signal(|_| 1.0)),
+            Some(signal(|_| 0.0)),
+        )
         .unwrap_or_else(|e| unreachable!("{e}"));
     let (stats, _) = render(&piece);
     assert_eq!(
@@ -166,10 +175,10 @@ fn a_moving_camera_composes_every_frame_with_its_view_and_a_static_one_costs_one
     let (mut piece, tape) = one_clip();
     piece
         .camera(
-            signal(|t| t / 10.0),
-            signal(|_| 0.25),
-            signal(|t| 1.0 + t),
-            signal(|_| 5.0),
+            Some(signal(|t| t / 10.0)),
+            Some(signal(|_| 0.25)),
+            Some(signal(|t| 1.0 + t)),
+            Some(signal(|_| 5.0)),
         )
         .unwrap_or_else(|e| unreachable!("{e}"));
     let (stats, _) = render(&piece);
@@ -191,7 +200,7 @@ fn a_moving_camera_composes_every_frame_with_its_view_and_a_static_one_costs_one
 
     let (mut piece, tape) = one_clip();
     piece
-        .camera(None, None, signal(|_| 1.5), None)
+        .camera(None, None, Some(signal(|_| 1.5)), None)
         .unwrap_or_else(|e| unreachable!("{e}"));
     let (stats, _) = render(&piece);
     assert_eq!(
@@ -205,14 +214,14 @@ fn a_camera_needs_a_compose_and_a_zoom_above_zero() {
     let mut bare = square();
     bare.clip("a", Arc::new(Flat), 0.0, Some(1.0))
         .unwrap_or_else(|e| unreachable!("{e}"));
-    let Err(Error::Invalid { message }) = bare.camera(None, None, signal(|_| 2.0), None) else {
+    let Err(Error::Invalid { message }) = bare.camera(None, None, Some(signal(|_| 2.0)), None) else {
         unreachable!("accepted")
     };
     assert!(message.contains("compose"), "{message}");
 
     let (mut piece, _) = one_clip();
     piece
-        .camera(None, None, signal(|_| 0.0), None)
+        .camera(None, None, Some(signal(|_| 0.0)), None)
         .unwrap_or_else(|e| unreachable!("{e}"));
     let Err(Error::Invalid { message }) = piece.frame(0.0) else {
         unreachable!("drawn")
@@ -381,7 +390,7 @@ fn a_camera_moves_both_clips_of_a_transition_by_the_same_view() {
         .transition("a", "b", 1.25, 0.5, TransitionKind::Dissolve)
         .unwrap_or_else(|e| unreachable!("{e}"));
     piece
-        .camera(None, None, signal(|_| 2.0), None)
+        .camera(None, None, Some(signal(|_| 2.0)), None)
         .unwrap_or_else(|e| unreachable!("{e}"));
     let (stats, _) = render(&piece);
     // four different drawings (the first clip held, two in the window, the second held), one call each
