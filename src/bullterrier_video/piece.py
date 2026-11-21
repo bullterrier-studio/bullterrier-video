@@ -183,7 +183,8 @@ class Piece:
         does not depend on the number. A frame equal to the one before it is not drawn again. The file appears only when
         ffmpeg succeeded. ffmpeg is the program named by `BT_VIDEO_FFMPEG`, else `ffmpeg` on `PATH`.
         """
-        return RenderStats(*self._native.render(os.fspath(path), DEFAULT_WORKERS if workers is None else workers))
+        frames, drawn, composed = self._native.render(os.fspath(path), DEFAULT_WORKERS if workers is None else workers)
+        return RenderStats(frames, drawn, composed)
 
     def draft(self, scale: float = 0.5, *, fps: float | None = None) -> Piece:
         """The same piece smaller (each side `scale` times, to the nearest even number) and, with `fps`, at that rate.
