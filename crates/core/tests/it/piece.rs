@@ -812,6 +812,15 @@ fn a_cyclic_value_a_hair_short_of_the_wrap_closes() {
 }
 
 #[test]
+fn a_cyclic_value_just_under_the_wrap_at_the_end_closes_with_zero_at_the_start() {
+    // 0 at the start, 360 - 1e-7 at the end: a millionth of a degree short of the turn, the short way round
+    let under = looped(Arc::new(Turn), "angle", |t| if t < 1e-9 { 0.0 } else { t * 180.0 - 1e-7 });
+    render(&under, &Collect::default(), 1).unwrap_or_else(|e| unreachable!("{e}"));
+    let far = looped(Arc::new(Turn), "angle", |t| if t < 1e-9 { 0.0 } else { t * 180.0 - 1e-3 });
+    assert!(refusal(&far).contains("`angle`"), "a thousandth of a degree is over the tolerance");
+}
+
+#[test]
 fn a_looped_piece_with_two_clips_or_a_fade_is_refused_naming_the_fix() {
     let periodic = |t: f64| (std::f64::consts::PI * t).sin();
     let mut two = looped(Flat::new().0, "level", periodic);

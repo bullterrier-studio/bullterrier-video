@@ -147,10 +147,9 @@ class Piece:
     def __init__(self, profile: Profile, *, loop: bool = False) -> None:
         """An empty piece that will be written with `profile`.
 
-        `loop=True` makes the clock a circle: the frame after the last would be the first. The render is refused,
-        before any frame is drawn, when the piece has more than one clip (so no transition), a song with a fade in or
-        out, or any mapping or camera signal whose value at the start differs from its value at `duration`
-        (a cyclic address closes at its wrap: 360 is 0). Make the song's span whole bars, so the sound closes too.
+        `loop=True` makes the clock a circle: the frame after the last would be the first. The duration is cut down to a
+        whole number of frames (`duration` and the `Music` returned by `song` report it), and `render` refuses a piece
+        whose ends differ; what it refuses is in `docs/api.md`.
         """
         self._native = _core.Piece(profile, loop)
         self.profile = profile

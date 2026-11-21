@@ -768,3 +768,15 @@ def test_a_looped_piece_with_two_clips_is_refused(ffmpeg: Path, tmp_path: Path):
     piece.clip("b", FakeScene(), start=1.0, end=2.0)
     with pytest.raises(InvalidError, match="one clip"):
         piece.render(tmp_path / "x.mp4")
+
+
+def test_a_looped_piece_with_a_song_lasts_whole_frames_and_the_music_says_so(
+    audio: FakeSound, ffmpeg: Path, tmp_path: Path
+):
+    piece = btv.Piece(btv.Profile(WIDTH, HEIGHT, 24.0), loop=True)
+    piece.clip("a", FakeScene())
+    music = piece.song(audio, btv.between(0.0, 7.3846))  # 177.2 frames: 177 whole ones, 7.375 s
+    assert piece.duration == music.duration == 177 / 24
+    turn = piece.duration
+    piece["a"].map("angle", lambda times: times * 360.0 / turn)  # closes at the piece's own duration
+    assert piece.render(tmp_path / "loop.mp4").frames == 177

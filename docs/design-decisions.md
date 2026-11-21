@@ -119,7 +119,7 @@ the render. The tests that need scene skip without it, so the gate stays green o
 
 ## Loops: a circle checked at the seam, one clip, no fades (2026-11-21)
 
-`Piece(profile, loop=True)` makes frame N equal frame 0, so the render compares what each mapping and camera signal gives at
+`Piece(profile, loop=True)` makes frame N equal frame 0. The loop repeats every `frame_count / fps`, so a looped piece's duration is cut down to a whole number of frames where it is decided (the song is cut to it, `duration` and `Music.duration` report it): the period, the sound and the seam check are then one number. Down, not up: rounding up would pull the next bar's attack into the tail; a non-whole length is not refused, as a song's bars rarely come out whole. The render compares what each mapping and camera signal gives at
 0 s and at `duration`, as the picture would receive it (held to its range, a cyclic address wrapped; a cyclic gap is measured the
 short way round, so a hair under 360 closes with 0), and refuses the first that differs, before any frame is drawn. A looped piece
 is refused with more than one clip, any transition (which needs two clips) or a song fade above zero: each would show or be heard
