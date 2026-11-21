@@ -426,6 +426,14 @@ impl Piece {
         }
         let end = self.duration()?;
         for clip in &self.clips {
+            if clip.start() > 0.0 || clip.end().is_some_and(|e| e < end) {
+                return Err(invalid(format!(
+                    "a looped piece's clip must cover the whole piece, 0 s to {end} s, but `{}` runs {} s to {}: start it at 0 and end it at {end} s or later (or leave its end open)",
+                    clip.name(),
+                    clip.start(),
+                    clip.end().map_or("the end".into(), |e| format!("{e} s"))
+                )));
+            }
             if let Some(Seam { address, first, last }) = clip.seam(end)? {
                 return Err(invalid(format!(
                     "the loop does not close: `{address}` of clip `{}` is {first} at 0 s and {last} at {end} s; make that mapping periodic over the piece (a whole number of turns), or drop `loop`",

@@ -790,9 +790,10 @@ fn a_seam_that_differs_names_the_clip_the_address_and_both_values_before_any_fra
     let (picture, drawn) = Flat::new();
     let piece = looped(picture, "level", |t| t / 4.0);
     let message = refusal(&piece);
-    for part in ["`a`", "`level`", "0", "0.5"] {
-        assert!(message.contains(part), "{part} missing from: {message}");
-    }
+    assert!(
+        message.contains("`level` of clip `a` is 0 at 0 s and 0.5 at 2 s"),
+        "{message}"
+    );
     assert_eq!(drawn.load(Ordering::SeqCst), 0, "the check runs before the first frame");
 }
 
@@ -811,7 +812,7 @@ fn a_cyclic_value_a_hair_short_of_the_wrap_closes() {
 }
 
 #[test]
-fn a_looped_piece_with_two_clips_a_transition_or_a_fade_is_refused_naming_the_fix() {
+fn a_looped_piece_with_two_clips_or_a_fade_is_refused_naming_the_fix() {
     let periodic = |t: f64| (std::f64::consts::PI * t).sin();
     let mut two = looped(Flat::new().0, "level", periodic);
     two.clip("b", Flat::new().0, 1.0, None)
@@ -834,21 +835,6 @@ fn a_looped_piece_with_two_clips_a_transition_or_a_fade_is_refused_naming_the_fi
         faded.set_looped(true);
         assert!(refusal(&faded).contains("fade"), "fades {fade_in} {fade_out}");
     }
-}
-
-#[test]
-fn a_looped_piece_with_a_transition_is_refused_naming_the_fix() {
-    let mut piece = looped(Flat::new().0, "level", |_| 0.5);
-    piece
-        .clip("b", Flat::new().0, 1.0, Some(2.0))
-        .unwrap_or_else(|e| unreachable!("{e}"));
-    piece
-        .transition("a", "b", 1.0, 0.5, bullterrier_video::TransitionKind::Cut)
-        .unwrap_or_else(|e| unreachable!("{e}"));
-    assert!(
-        refusal(&piece).contains("transition"),
-        "a transition needs two clips, which a loop refuses"
-    );
 }
 
 #[test]
@@ -877,4 +863,27 @@ fn a_camera_signal_that_differs_at_the_seam_is_named() {
         .camera(None, None, None, Some(Arc::new(FnSignal(Box::new(|t| t * 180.0)))))
         .unwrap_or_else(|e| unreachable!("{e}"));
     render(&piece, &Collect::default(), 1).unwrap_or_else(|e| unreachable!("{e}"));
+}
+
+#[test]
+fn a_looped_clip_that_does_not_cover_the_piece_is_refused() {
+    let mut piece = Piece::new(Profile::square(4, 4.0).unwrap_or_else(|e| unreachable!("{e}")));
+    piece
+        .song(
+            Arc::new(FakeMusic::of(2.0)),
+            &FakeSound::of(2.0),
+            &Span::Whole,
+            0.0,
+            0.0,
+        )
+        .unwrap_or_else(|e| unreachable!("{e}"));
+    piece
+        .clip("a", Flat::new().0, 0.0, Some(1.0))
+        .unwrap_or_else(|e| unreachable!("{e}"));
+    piece
+        .clip_mut("a")
+        .and_then(|c| c.set(Values::from([("level".to_string(), Value::Number(0.5))])))
+        .unwrap_or_else(|e| unreachable!("{e}"));
+    piece.set_looped(true);
+    assert!(refusal(&piece).contains("cover"));
 }
