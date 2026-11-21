@@ -724,3 +724,157 @@ fn a_draft_is_the_same_piece_smaller_and_at_a_lower_rate_and_leaves_the_original
         "a rate of zero"
     );
 }
+
+/// A picture of one grey whose `angle` is a cyclic turn of 0 to 360: the level is the turn's fraction.
+struct Turn;
+
+impl Picture for Turn {
+    fn parameters(&self) -> Result<Vec<Parameter>, Error> {
+        Ok(vec![parameter("angle", number(0.0, 360.0, true, false))])
+    }
+
+    #[expect(clippy::cast_possible_truncation, reason = "a test level")]
+    fn render(&self, values: &Values, long_side: u32) -> Result<Frame, Error> {
+        let Some(Value::Number(angle)) = values.get("angle") else {
+            return Err(Error::Port {
+                port: "picture",
+                message: "no angle".into(),
+            });
+        };
+        let side = long_side as usize;
+        Frame::new(side, side, [(*angle / 360.0) as f32, 0.0, 0.0, 1.0].repeat(side * side))
+    }
+}
+
+/// A looped two-second piece with one clip `a` of `picture`, `address` driven by `signal` of the time.
+fn looped(picture: Arc<dyn Picture>, address: &str, signal: impl Fn(f64) -> f64 + Send + Sync + 'static) -> Piece {
+    let mut piece = Piece::new(Profile::square(4, 4.0).unwrap_or_else(|e| unreachable!("{e}")));
+    piece
+        .song(
+            Arc::new(FakeMusic::of(2.0)),
+            &FakeSound::of(2.0),
+            &Span::Whole,
+            0.0,
+            0.0,
+        )
+        .unwrap_or_else(|e| unreachable!("{e}"));
+    piece
+        .clip("a", picture, 0.0, None)
+        .unwrap_or_else(|e| unreachable!("{e}"));
+    piece
+        .clip_mut("a")
+        .and_then(|c| c.map(address, Arc::new(FnSignal(Box::new(signal))), 0.0))
+        .unwrap_or_else(|e| unreachable!("{e}"));
+    piece.set_looped(true);
+    piece
+}
+
+fn refusal(piece: &Piece) -> String {
+    match render(piece, &Collect::default(), 1) {
+        Err(Error::Invalid { message }) => message,
+        other => unreachable!("expected a refusal, got {:?}", other.map(|s| s.frames)),
+    }
+}
+
+#[test]
+fn a_looped_piece_whose_mappings_close_renders() {
+    // a sine of one whole turn over the two seconds: the same at both ends
+    let piece = looped(Flat::new().0, "level", |t| 0.5 + 0.5 * (std::f64::consts::PI * t).sin());
+    let encoder = Collect::default();
+    let stats = render(&piece, &encoder, 2).unwrap_or_else(|e| unreachable!("{e}"));
+    assert_eq!(stats.frames, 8, "a loop has as many frames as the same piece unlooped");
+}
+
+#[test]
+fn a_seam_that_differs_names_the_clip_the_address_and_both_values_before_any_frame_is_drawn() {
+    let (picture, drawn) = Flat::new();
+    let piece = looped(picture, "level", |t| t / 4.0);
+    let message = refusal(&piece);
+    for part in ["`a`", "`level`", "0", "0.5"] {
+        assert!(message.contains(part), "{part} missing from: {message}");
+    }
+    assert_eq!(drawn.load(Ordering::SeqCst), 0, "the check runs before the first frame");
+}
+
+#[test]
+fn a_cyclic_address_that_turns_a_whole_circle_closes() {
+    let piece = looped(Arc::new(Turn), "angle", |t| t * 180.0);
+    render(&piece, &Collect::default(), 1).unwrap_or_else(|e| unreachable!("{e}"));
+    let half = looped(Arc::new(Turn), "angle", |t| t * 90.0);
+    assert!(refusal(&half).contains("`angle`"));
+}
+
+#[test]
+fn a_cyclic_value_a_hair_short_of_the_wrap_closes() {
+    let piece = looped(Arc::new(Turn), "angle", |t| t * 180.0 - 1e-12);
+    render(&piece, &Collect::default(), 1).unwrap_or_else(|e| unreachable!("{e}"));
+}
+
+#[test]
+fn a_looped_piece_with_two_clips_a_transition_or_a_fade_is_refused_naming_the_fix() {
+    let periodic = |t: f64| (std::f64::consts::PI * t).sin();
+    let mut two = looped(Flat::new().0, "level", periodic);
+    two.clip("b", Flat::new().0, 1.0, None)
+        .unwrap_or_else(|e| unreachable!("{e}"));
+    assert!(refusal(&two).contains("one clip"), "two clips");
+    for (fade_in, fade_out) in [(0.5, 0.0), (0.0, 0.5)] {
+        let mut faded = Piece::new(Profile::square(4, 4.0).unwrap_or_else(|e| unreachable!("{e}")));
+        faded
+            .song(
+                Arc::new(FakeMusic::of(2.0)),
+                &FakeSound::of(2.0),
+                &Span::Whole,
+                fade_in,
+                fade_out,
+            )
+            .unwrap_or_else(|e| unreachable!("{e}"));
+        faded
+            .clip("a", Flat::new().0, 0.0, None)
+            .unwrap_or_else(|e| unreachable!("{e}"));
+        faded.set_looped(true);
+        assert!(refusal(&faded).contains("fade"), "fades {fade_in} {fade_out}");
+    }
+}
+
+#[test]
+fn a_looped_piece_with_a_transition_is_refused_naming_the_fix() {
+    let mut piece = looped(Flat::new().0, "level", |_| 0.5);
+    piece
+        .clip("b", Flat::new().0, 1.0, Some(2.0))
+        .unwrap_or_else(|e| unreachable!("{e}"));
+    piece
+        .transition("a", "b", 1.0, 0.5, bullterrier_video::TransitionKind::Cut)
+        .unwrap_or_else(|e| unreachable!("{e}"));
+    assert!(
+        refusal(&piece).contains("transition"),
+        "a transition needs two clips, which a loop refuses"
+    );
+}
+
+#[test]
+fn a_looped_draft_keeps_the_loop() {
+    let piece = looped(Flat::new().0, "level", |t| t / 4.0);
+    let draft = piece.draft(0.5, None).unwrap_or_else(|e| unreachable!("{e}"));
+    assert!(refusal(&draft).contains("`level`"));
+}
+
+#[test]
+fn a_camera_signal_that_differs_at_the_seam_is_named() {
+    struct Passthrough;
+    impl bullterrier_video::ports::Compose for Passthrough {
+        fn compose(&self, layers: &[bullterrier_video::ports::Layer<'_>]) -> Result<Frame, Error> {
+            Ok(layers[0].frame.clone())
+        }
+    }
+    let mut piece = looped(Flat::new().0, "level", |_| 0.5);
+    piece.compose(Arc::new(Passthrough));
+    piece
+        .camera(Some(Arc::new(FnSignal(Box::new(|t| t / 10.0)))), None, None, None)
+        .unwrap_or_else(|e| unreachable!("{e}"));
+    let message = refusal(&piece);
+    assert!(message.contains("camera") && message.contains("dx"), "{message}");
+    piece
+        .camera(None, None, None, Some(Arc::new(FnSignal(Box::new(|t| t * 180.0)))))
+        .unwrap_or_else(|e| unreachable!("{e}"));
+    render(&piece, &Collect::default(), 1).unwrap_or_else(|e| unreachable!("{e}"));
+}

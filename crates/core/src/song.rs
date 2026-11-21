@@ -25,6 +25,7 @@ pub struct Song {
     soundtrack: Arc<dyn Sound>,
     start: Seconds,
     end: Seconds,
+    faded: bool,
 }
 
 impl Song {
@@ -55,6 +56,7 @@ impl Song {
             soundtrack: Arc::from(cut),
             start,
             end,
+            faded: fade_in > 0.0 || fade_out > 0.0,
         })
     }
 
@@ -62,6 +64,11 @@ impl Song {
     #[must_use]
     pub fn duration(&self) -> Seconds {
         self.end - self.start
+    }
+
+    /// Whether the song fades in or out.
+    pub(crate) fn faded(&self) -> bool {
+        self.faded
     }
 
     /// The cut and faded sound.

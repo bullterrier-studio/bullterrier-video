@@ -19,7 +19,7 @@ mod span;
 mod transition;
 mod types;
 
-pub use clip::Clip;
+pub use clip::{Clip, SEAM_TOLERANCE};
 pub use colour::{Ramp, Rgb, parse_hex};
 pub use error::Error;
 pub use ffmpeg::Ffmpeg;

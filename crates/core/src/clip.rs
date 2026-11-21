@@ -17,6 +17,19 @@ struct Mapping {
     ramp: Option<Ramp>,
 }
 
+/// How far apart a looped piece's first and last value of one address may be and still close: 1e-6 in the address's own unit.
+/// Far above the rounding of a periodic signal read at the last moment (about 1e-12 for values in the thousands), far below
+/// anything that shows (a millionth of a degree, a pixel or a unit of opacity; an 8-bit step is 4e-3).
+pub const SEAM_TOLERANCE: f64 = 1e-6;
+
+/// An address whose value differs between the start and the end of a looped piece.
+#[derive(Debug, Clone, PartialEq)]
+pub(crate) struct Seam {
+    pub(crate) address: String,
+    pub(crate) first: Value,
+    pub(crate) last: Value,
+}
+
 /// A picture placed on the timeline from `start` to `end` (`None`: to the next clip or the end of the piece).
 ///
 /// Every address that is set or mapped is checked against the picture's own description when it is given, so a clip never
@@ -235,6 +248,36 @@ impl Clip {
             }
         }
         Ok(frames)
+    }
+
+    /// The first mapped address whose value at `end` differs from its value at the start (both as the picture would receive
+    /// them, so a cyclic address that wraps closes), with the two values; `None` when every mapping closes.
+    ///
+    /// # Errors
+    /// As [`Clip::values`].
+    pub(crate) fn seam(&self, end: Seconds) -> Result<Option<Seam>, Error> {
+        let ends = self.values(&[0.0, end])?;
+        for address in self.mappings.keys() {
+            let (first, last) = (&ends[0][address], &ends[1][address]);
+            let closes = match (first, last, self.kind_of(address)?) {
+                (Value::Number(a), Value::Number(b), Kind::Number { min, max, cyclic, .. }) => {
+                    // a cyclic value a hair under the wrap is as close to the start as one a hair over
+                    let gap = (a - b).abs();
+                    let gap = if *cyclic { gap.min(max - min - gap) } else { gap };
+                    gap <= SEAM_TOLERANCE
+                }
+                (Value::Color(a), Value::Color(b), _) => a.iter().zip(b).all(|(x, y)| (x - y).abs() <= SEAM_TOLERANCE),
+                (a, b, _) => a == b,
+            };
+            if !closes {
+                return Ok(Some(Seam {
+                    address: address.clone(),
+                    first: first.clone(),
+                    last: last.clone(),
+                }));
+            }
+        }
+        Ok(None)
     }
 
     fn kind_of(&self, address: &str) -> Result<&Kind, Error> {

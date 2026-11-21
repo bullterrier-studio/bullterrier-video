@@ -5,7 +5,7 @@ use std::path::Path;
 use std::sync::mpsc::{self, Receiver};
 use std::sync::{Arc, Condvar, Mutex, PoisonError};
 
-use crate::clip::Clip;
+use crate::clip::{Clip, SEAM_TOLERANCE, Seam};
 use crate::error::Error;
 use crate::ports::{Audio, Blend, Compose, Encode, Job, Layer, Music, Picture, Signal, Sound};
 use crate::profile::Profile;
@@ -36,6 +36,7 @@ pub struct Piece {
     compose: Option<Arc<dyn Compose>>,
     camera: Option<Camera>,
     transitions: Vec<Window>,
+    looped: bool,
 }
 
 /// The signals that move the finished frame; one that is not given leaves its part of the view at rest.
@@ -93,7 +94,13 @@ impl Piece {
             compose: None,
             camera: None,
             transitions: Vec::new(),
+            looped: false,
         }
+    }
+
+    /// Makes the piece's clock a circle (or not): the frame after the last would be the first. Checked when it renders.
+    pub fn set_looped(&mut self, looped: bool) {
+        self.looped = looped;
     }
 
     /// The output profile.
@@ -311,6 +318,9 @@ impl Piece {
         if workers == 0 {
             return Err(invalid("workers must be at least one".into()));
         }
+        if self.looped {
+            self.check_loop()?;
+        }
         let layout = self.layout()?;
         let frames = self.frame_count()?;
         let fps = self.profile.fps();
@@ -396,6 +406,50 @@ impl Piece {
             profile,
             ..self.clone()
         })
+    }
+
+    /// Whether the clock's circle closes: one clip (so no transition), no fade, and every mapping and camera signal the same at the
+    /// start and at the end (within [`SEAM_TOLERANCE`]).
+    fn check_loop(&self) -> Result<(), Error> {
+        let refuse = |why: &str| {
+            invalid(format!(
+                "a looped piece cannot have {why}: build it without `loop`, or remove that"
+            ))
+        };
+        if self.clips.len() > 1 {
+            return Err(refuse(
+                "more than one clip or any transition (a transition joins two clips), which would show at the seam",
+            ));
+        }
+        if self.song.as_ref().is_some_and(Song::faded) {
+            return Err(refuse("a song with a fade in or out, which would be heard at the seam"));
+        }
+        let end = self.duration()?;
+        for clip in &self.clips {
+            if let Some(Seam { address, first, last }) = clip.seam(end)? {
+                return Err(invalid(format!(
+                    "the loop does not close: `{address}` of clip `{}` is {first:?} at 0 s and {last:?} at {end} s; make that mapping periodic over the piece (a whole number of turns), or drop `loop`",
+                    clip.name()
+                )));
+            }
+        }
+        let views = self.views(&[0.0, end])?;
+        let (a, b) = (views[0], views[1]);
+        // a turn of the picture is the same one 360 degrees on
+        let turn = (a.rotate - b.rotate).abs() % 360.0;
+        for (name, first, last, gap) in [
+            ("dx", a.dx, b.dx, (a.dx - b.dx).abs()),
+            ("dy", a.dy, b.dy, (a.dy - b.dy).abs()),
+            ("zoom", a.zoom, b.zoom, (a.zoom - b.zoom).abs()),
+            ("rotate", a.rotate, b.rotate, turn.min(360.0 - turn)),
+        ] {
+            if gap > SEAM_TOLERANCE {
+                return Err(invalid(format!(
+                    "the loop does not close: the camera's {name} is {first} at 0 s and {last} at {end} s; make that signal periodic over the piece, or drop `loop`"
+                )));
+            }
+        }
+        Ok(())
     }
 
     /// Which clip draws each moment: clips by start, an end that is not given reaching the next clip or the piece's end. An
