@@ -255,6 +255,10 @@ fn arguments(
                 "-pix_fmt",
                 pixel_format,
             ]);
+            if (job.codec, job.depth) == ("h264", 8) {
+                // High profile: what every phone decodes; 10-bit has no profile that plays on most
+                push(&["-profile:v", "high"]);
+            }
             push(&[
                 "-colorspace",
                 "bt709",

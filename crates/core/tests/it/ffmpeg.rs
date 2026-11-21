@@ -165,6 +165,11 @@ fn depth_and_codec_choose_the_encoder_and_the_pixel_format() {
             "{codec} {depth}: {args:?}"
         );
         assert_eq!(
+            has(&args, &["-profile:v", "high"]),
+            codec == "h264" && depth == 8,
+            "{codec} {depth}: only 8-bit H.264 names the High profile phones play"
+        );
+        assert_eq!(
             has(&args, &["-tag:v", "hvc1"]),
             codec == "hevc",
             "{codec}: only HEVC is tagged for Apple players"

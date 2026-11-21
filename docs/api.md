@@ -68,7 +68,7 @@ that looks like silence.
 closes on the beat; an unknown meter raises), `whole()`, `between(start, end)`, `loudest(band, length)`.
 
 **Profile:** `Profile.vertical(width, fps)` (9:16, safe area 12 to 80 percent of the height), `.landscape`, `.square`; fields
-`width`, `height`, `fps`, `depth` (8 or 10 bit), `codec` (`h264` or `hevc`), `loudness` (LUFS, none by default), `safe`; the sides must be even. The scene's own `fit` and
+`width`, `height`, `fps`, `depth` (8 or 10 bit; delivery: 8-bit h264 is written as High profile and plays everywhere, `depth=10` plays on few phones, so use it for grading or archive, not for sending), `codec` (`h264` or `hevc`), `loudness` (LUFS, none by default), `safe`; the sides must be even. The scene's own `fit` and
 `cover` make the crop; video never crops afterward.
 
 **Footage** (*planned*): `Footage(path, start=0.0)`: a source of frames from `start` seconds into the file, handed to a scene
