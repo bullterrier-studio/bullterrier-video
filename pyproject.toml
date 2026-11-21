@@ -328,7 +328,7 @@ DEP004 = ["packaging"]
 root_package = "bullterrier_video"
 
 [[tool.importlinter.contracts]]
-name = "Layers: __main__ > cli > piece > adapters, music, spans, transitions > _native > errors"
+name = "Layers: __main__ > cli > piece > adapters, music, ramp, spans, transitions > _native > errors"
 type = "layers"
 containers = ["bullterrier_video"]
 exhaustive = true  # a new top-level module must be placed in a layer here
@@ -336,7 +336,7 @@ layers = [
     "__main__",  # `python -m bullterrier_video`: runs the command line
     "cli",  # app: the command line
     "piece",  # the piece and its clips: the one place a caller builds a video
-    "adapters | music | spans | transitions",  # the audio and compose adapters, what the song knows, which part of it, how a clip gives way: independent of one another
+    "adapters | music | ramp | spans | transitions",  # the audio and compose adapters, what the song knows, which part of it, how a clip gives way: independent of one another
     # the home of the Rust extension (`_native._core`): it imports only `errors` (the bindings raise its errors), so
     # every layer above may use it
     "_native",

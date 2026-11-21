@@ -3,7 +3,7 @@ import only the layers below it:
 
     app        __main__ > cli
     piece      the piece and its clips: where a caller builds a video
-    leaves     adapters, music, spans, transitions: independent of one another
+    leaves     adapters, music, ramp, spans, transitions: independent of one another
     _native    the home of the Rust extension (`_native._core`); it imports only `errors` (the extension imports its
                `InvalidError` when it first raises one)
     errors     the exceptions; they import nothing from bullterrier_video, so every layer may raise them
@@ -28,7 +28,7 @@ PACKAGE = Path(bullterrier_video.__file__).parent
 ROOT = PACKAGE.parent.parent  # the repository: pyproject.toml holds the contracts
 LINT_IMPORTS = Path(sys.executable).with_name("lint-imports")  # `uv run lint-imports` from the repository root
 
-LAYERS = "Layers: __main__ > cli > piece > adapters, music, spans, transitions > _native > errors"
+LAYERS = "Layers: __main__ > cli > piece > adapters, music, ramp, spans, transitions > _native > errors"
 
 
 def lint(cwd: Path, pythonpath: Path | None = None) -> subprocess.CompletedProcess:

@@ -9,7 +9,7 @@ lines of choreography.
 The examples show the whole designed surface, including what is still planned; the built part is `examples/mill.py`'s calls.
 
 **What is built:** the ports and video's own types; the core (profile, spans, a song in piece time, clips with their mappings, the
-piece and its parallel frame loop, contact sheets, the camera and transitions, the ffmpeg adapter); the Python package (`Piece`, `Clip`, `Profile`, spans, `Music`,
+piece and its parallel frame loop, contact sheets, the camera and transitions, the ffmpeg adapter); the Python package (`Piece`, `Clip`, `Ramp`, `Profile`, spans, `Music`,
 `Levels`, `render_all`, `Cut`, `Dissolve`, `Sweep`, the audio and scene compose adapters), the mill piece and its variants on it. **Planned, not in the signatures yet:** `track`,
 `fill`, `Footage`, `loop` (marked *planned* below); each arrives with the batch that needs it.
 
@@ -52,7 +52,8 @@ piece.render("mill.mp4")
 | `Piece.sheet(path, at, width=240, *, columns=None)` | a contact sheet (png) of chosen moments side by side (or wrapped into rows of `columns`, the last row padded), each cell drawn `width` pixels along its long side by the picture itself, so it takes a few frames' time, not a render's; a moment no clip draws is a black cell; the last frame is at `duration - 1/fps`, a moment past it is refused naming it |
 | `Piece.copy()` | an independent piece sharing the pictures and their caches |
 | `render_all(pieces, folder, *, workers=None, extension="mp4")` | one file `<name>.<extension>` per entry of a mapping name to piece, one after another, each with all the workers; a piece that fails stops the run and its error names it |
-| `Clip.map(address, signal, *, lag=0.0)` | see "Mapping" |
+| `Clip.map(address, signal, *, lag=0.0)` | see "Mapping"; `signal` is a `Ramp` for a colour address |
+| `Ramp(*stops, signal)` | a colour that follows a signal: see "Mapping" |
 | `Clip.set(values)` | constants by address (numbers, text, colours, pictures); the picture's own values until then |
 | `Clip.swap(picture)` | another picture in the clip; refused, naming the address, if it lacks one that is set or mapped (nothing changes then) |
 
@@ -80,13 +81,19 @@ through a picture hole. Waits for the decode port.
 every frame of the clip.
 
 - The address is the picture's own, as `scene.parameters()` lists it (`logo.drawing.ring_on`). `map` and `set` take it as a string or as any object with a str `.address` (`btv.Addressed`, a typed parameter handle); the handle's address is what errors name. A number, an integer (rounded) and
-  a bool take a mapped signal; a colour, a choice, a text and a picture are `set`.
+  a bool take a mapped signal; a choice, a text and a picture are `set`. A **colour** is mapped through a `Ramp` (below), never as a number.
 - The value is held to the described range; a **cyclic** parameter wraps into it instead (an angle of 360 reads as 0); a pixel
   value is read at the picture's own design size, so a preview and a final render agree.
 - A signal is control's (or anything with `sample(times)`, or a plain function from an array of seconds to an array); signals add, subtract and multiply with numbers and each other, so a
   mix is an expression.
 - Refused, naming the address: one that the picture does not have (with the nearest names), a text or picture parameter
-  (those are `set`), an address mapped twice or both mapped and set.
+  (those are `set`), a bare signal for a colour or a `Ramp` for anything that is not a colour, an address mapped twice or both mapped and set.
+- **Colour:** `clip.map("glow.look.lamp.color", btv.Ramp("#3060ff", "#ff2020", m.band("bass")))`. `Ramp(*stops, signal)`: two or more
+  stops (`#rrggbb`, `#rgb` or three floats 0..1: a tuple, list or 1-d array), evenly spaced, then the signal as the last argument. The signal's value
+  picks the position (0 the first stop, 1 the last, held between), and the colour between two stops is mixed in OKLab, so a middle
+  is never muddy. Read in bulk like any signal (and lagged by `lag`); the picture gets a triple of floats a frame (never a hex string, so no 8-bit steps),
+  and a colour parameter of the picture takes it as it takes `set`'s. `Clip.set` still takes a colour as `#rrggbb` text. Stops are checked when the
+  ramp is mapped, the error naming the address. No stop positions: put a stop twice to hold a colour.
 - A moment no clip covers is black. Clips follow one another: a clip with no `end` runs to the next clip's start or the piece's end.
 - A clip is drawn outside its own span during a transition (it needs both pictures); its signals are total, so this is safe.
 

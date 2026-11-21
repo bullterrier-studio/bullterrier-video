@@ -680,3 +680,64 @@ def test_an_overlap_outside_a_transition_and_a_bad_kind_are_refused_naming_the_f
         piece.transition("a", "b", 1.25, 0.5, "dissolve")  # type: ignore[arg-type]
     piece.transition("a", "b", 1.25, 0.5)  # a Cut covers the overlap and needs no scene
     assert piece.frame(0.0).shape == (HEIGHT, WIDTH, 4)
+
+
+# a colour follows a signal through a Ramp
+
+
+@dataclass(frozen=True)
+class ByHandle:
+    address: str
+
+
+def test_a_ramp_hands_the_picture_a_triple_of_floats_per_frame_from_one_bulk_read():
+    piece, scene = piece_of()
+    piece["a"].map(ByHandle("tint"), btv.Ramp("#000", (1.0, 0.5, 0.0), lambda t: np.asarray(t) / 0.75))
+    for i in range(4):  # 0, 1/3, 2/3, 1
+        piece.frame(i / 4.0)
+    first, last = scene.seen[-4]["tint"], scene.seen[-1]["tint"]
+    assert first == (0.0, 0.0, 0.0), "the first stop is exact, a tuple of floats"
+    assert last == (1.0, 0.5, 0.0), "the last stop is exact, not rounded to 8 bits"
+    assert all(isinstance(c, float) for c in last)
+
+
+def test_a_ramp_takes_hex_short_hex_triples_and_arrays_as_stops():
+    piece, scene = piece_of()
+    piece["a"].map("tint", btv.Ramp("#ff0000", "#00f", np.array([0.0, 1.0, 0.0]), Constant(1.0)))
+    piece.frame(0.0)
+    assert scene.seen[-1]["tint"] == (0.0, 1.0, 0.0)
+
+
+def test_a_ramp_is_refused_where_it_does_not_belong_and_a_bare_signal_for_a_colour():
+    piece, _ = piece_of()
+    ramp = btv.Ramp("#000", "#fff", Constant(0.5))
+    with pytest.raises(InvalidError, match=r"`level`.*not a colour"):
+        piece["a"].map("level", ramp)
+    with pytest.raises(InvalidError, match=r"`tint`.*colour.*btv\.Ramp"):
+        piece["a"].map("tint", Constant(0.5))
+    with pytest.raises(InvalidError, match="two or more colours"):
+        btv.Ramp("#000", Constant(0.5))
+    with pytest.raises(InvalidError, match="not a colour"):
+        piece["a"].map("tint", btv.Ramp("red", "#fff", Constant(0.5)))
+    with pytest.raises(InvalidError, match="ramp is Ramp"):
+        btv.Ramp(Constant(0.5))
+
+
+def test_a_mapped_colour_changes_a_scenes_lit_pixels_across_frames():
+    bts = pytest.importorskip("bullterrier_scene")
+    height, width = 16, 24
+    y, x = np.mgrid[0:height, 0:width].astype(np.float32)
+    photo = np.stack([x / width, y / height, (x + y) % 7 / 7], axis=-1).astype(np.float32)
+    depth = np.clip(1.5 - np.hypot(x - width / 2, y - height / 2) / (0.25 * width), 0, 1).astype(np.float32)
+    lamp = {"steps": [{"effect": "point_light", "params": {"color": "#ffe2b8"}}]}
+    scene = bts.Scene(width, height).add(
+        bts.Layer.fill("#202020").named("ground"),
+        bts.Layer.picture(photo, maps={"depth": depth}).look(lamp).named("glow"),
+    )
+    piece = btv.Piece(btv.Profile(width, height, 4.0))
+    piece.clip("lamp", scene, end=1.0).map(
+        "glow.look.point_light.color", btv.Ramp("#3060ff", "#ff2020", lambda t: np.asarray(t) / 0.75)
+    )
+    frames = np.stack([piece.frame(i / 4.0) for i in range(4)])
+    red_over_blue = (frames[..., 0] - frames[..., 2]).mean(axis=(1, 2))
+    assert np.all(np.diff(red_over_blue) > 1e-4), f"the lamp turns from blue to red: {red_over_blue}"

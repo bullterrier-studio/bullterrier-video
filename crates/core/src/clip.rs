@@ -103,7 +103,14 @@ impl Clip {
                 self.name
             )));
         }
-        self.insert_mapping(address, Mapping { signal, lag, ramp: None })
+        self.insert_mapping(
+            address,
+            Mapping {
+                signal,
+                lag,
+                ramp: None,
+            },
+        )
     }
 
     /// Drives the colour at `address`: `signal`, read `lag` seconds late, picks the position on `ramp`.
@@ -117,7 +124,14 @@ impl Clip {
                 self.name
             )));
         }
-        self.insert_mapping(address, Mapping { signal, lag, ramp: Some(ramp) })
+        self.insert_mapping(
+            address,
+            Mapping {
+                signal,
+                lag,
+                ramp: Some(ramp),
+            },
+        )
     }
 
     fn insert_mapping(&mut self, address: &str, mapping: Mapping) -> Result<(), Error> {

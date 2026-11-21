@@ -14,7 +14,7 @@ use bullterrier_video::{Band, Ffmpeg, Hit};
 use numpy::{PyArray1, PyArrayMethods};
 use pyo3::prelude::*;
 use pyo3::sync::MutexExt;
-use pyo3::types::PyDict;
+use pyo3::types::{PyDict, PyList};
 
 use adapters::{PyCompose, PyMusic, PyPicture, PySignal, PySound, value_of};
 use error::{invalid, raised};
@@ -312,6 +312,38 @@ impl Piece {
         let mut piece = self.locked(py);
         let clip = piece.clip_mut(clip).map_err(|e| raised(py, &e))?;
         clip.map(address, Arc::new(PySignal(signal)), lag)
+            .map_err(|e| raised(py, &e))
+    }
+
+    /// Drives the colour `address` of clip `clip`: `signal` picks the position on the ramp through `stops` (`#rrggbb`, `#rgb`
+    /// or three floats from 0 to 1).
+    #[pyo3(signature = (clip, address, stops, signal, lag=0.0))]
+    fn map_ramp(
+        &self,
+        py: Python<'_>,
+        clip: &str,
+        address: &str,
+        stops: &Bound<'_, PyList>,
+        signal: Py<PyAny>,
+        lag: f64,
+    ) -> PyResult<()> {
+        let stops = stops
+            .iter()
+            .map(|stop| match stop.extract::<String>() {
+                Ok(text) => core::parse_hex(&text),
+                Err(_) => stop.extract::<[f64; 3]>().map_err(|_| core::Error::Invalid {
+                    message: format!(
+                        "a ramp stop is #rrggbb, #rgb or three numbers from 0 to 1, got {}",
+                        stop.get_type()
+                    ),
+                }),
+            })
+            .collect::<Result<Vec<_>, _>>()
+            .and_then(core::Ramp::new)
+            .map_err(|e| raised(py, &e))?;
+        let mut piece = self.locked(py);
+        let clip = piece.clip_mut(clip).map_err(|e| raised(py, &e))?;
+        clip.map_ramp(address, stops, Arc::new(PySignal(signal)), lag)
             .map_err(|e| raised(py, &e))
     }
 

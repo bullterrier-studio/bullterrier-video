@@ -8,7 +8,7 @@ use bullterrier_video::ports::{Blend, Compose, Layer, Music, Picture, Signal, So
 use bullterrier_video::{Band, Error, Frame, Hit, Kind, Moment, Parameter, Seconds, Section, Value, Values, View};
 use numpy::{PyArray1, PyArrayMethods, PyReadonlyArray1, PyReadonlyArrayDyn, PyUntypedArrayMethods};
 use pyo3::prelude::*;
-use pyo3::types::{PyBool, PyDict, PyFloat, PyInt, PyString};
+use pyo3::types::{PyBool, PyDict, PyFloat, PyInt, PyString, PyTuple};
 
 use crate::error::from_python;
 
@@ -86,6 +86,7 @@ impl PyPicture {
             Value::Number(n) => n.into_pyobject(py)?.into_any(),
             Value::Bool(b) => PyBool::new(py, *b).to_owned().into_any(),
             Value::Text(t) => PyString::new(py, t).into_any(),
+            Value::Color(rgb) => PyTuple::new(py, rgb)?.into_any(),
             Value::Picture(frame) => PyArray1::from_slice(py, frame.pixels())
                 .reshape([frame.height(), frame.width(), 4])?
                 .into_any(),

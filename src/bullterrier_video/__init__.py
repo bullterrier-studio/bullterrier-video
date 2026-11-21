@@ -7,6 +7,7 @@ from ._native._core import Profile, scale
 from .errors import BullterrierVideoError, InvalidError, PortError
 from .music import Bar, Levels, Music, Phrase, Section
 from .piece import Addressed, Clip, Piece, RenderStats, render_all
+from .ramp import Ramp
 from .spans import Span, around_drop, bars, between, loudest, whole
 from .transitions import Cut, Dissolve, Sweep
 
@@ -26,6 +27,7 @@ __all__ = [
     "Piece",
     "PortError",
     "Profile",
+    "Ramp",
     "RenderStats",
     "Section",
     "Span",

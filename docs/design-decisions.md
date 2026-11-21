@@ -63,6 +63,13 @@ value is not scaled: scene reads `px` as design pixels at any size, so scaling h
 names), mapped twice, or both mapped and set is refused when the call is made, not at render. `Music.band` scales over the
 stretch asked for (the piece, or a part of it), not over the song, as a clip measured alone would be.
 
+## A colour is mapped through a ramp video owns (2026-11-21)
+
+A colour is a settable kind in image and scene, so a signal cannot drive it as a number, and three channel mappings would leave every caller
+to decide what a blend is (per-channel mixes go muddy between hues). `Ramp(*stops, signal)` is video's: stops evenly spaced, the signal 0..1
+picks the place, the mix is in OKLab (perceptually even), done once in the core with the exact sRGB transfer, ends equal the stops exactly.
+The value handed to the picture is three floats (`Value::Color`), so a slow fade never steps in 8-bit hex. Stop positions are left out until a piece needs them.
+
 ## numpy and the audio adapter (2026-11-20)
 
 numpy is a runtime dependency of the package and of the bindings crate (`deny.toml` names it a wrapper there): pictures, signals and

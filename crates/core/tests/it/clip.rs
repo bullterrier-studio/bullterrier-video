@@ -408,7 +408,14 @@ fn a_ramp_starts_and_ends_on_its_stops_exactly() {
 fn the_midpoint_is_the_oklab_midpoint_not_the_channel_mean() {
     let mid = ramp(&["#ff0000", "#0000ff"]).at(0.5);
     assert!(
-        near(mid, [0.550_441_062_288_394_6, 0.325_620_683_214_130_46, 0.636_500_699_513_632_2]),
+        near(
+            mid,
+            [
+                0.550_441_062_288_394_6,
+                0.325_620_683_214_130_46,
+                0.636_500_699_513_632_2
+            ]
+        ),
         "{mid:?}"
     );
     // black to white: mid grey is OKLab lightness one half, linear 1/8, which sRGB encodes by the exact curve
@@ -427,7 +434,10 @@ fn lightness_runs_one_way_from_dark_to_light() {
 #[test]
 fn a_ramp_needs_two_stops_and_real_colours() {
     assert!(matches!(Ramp::new(vec![[0.0; 3]]), Err(Error::Invalid { .. })));
-    assert!(matches!(Ramp::new(vec![[0.0; 3], [1.5, 0.0, 0.0]]), Err(Error::Invalid { .. })));
+    assert!(matches!(
+        Ramp::new(vec![[0.0; 3], [1.5, 0.0, 0.0]]),
+        Err(Error::Invalid { .. })
+    ));
     for bad in ["red", "#12", "#ggg", "123456", "#12345é"] {
         assert!(matches!(parse_hex(bad), Err(Error::Invalid { .. })), "{bad}");
     }
@@ -440,8 +450,18 @@ fn a_mapped_ramp_gives_a_colour_of_three_floats_each_frame() {
     clip.map_ramp("lamp.color", r.clone(), Arc::new(FnSignal(Box::new(|t| t / 2.0))), 0.0)
         .unwrap_or_else(|e| unreachable!("{e}"));
     let frames = clip.values(&[0.0, 1.0, 2.0]).unwrap_or_else(|e| unreachable!("{e}"));
-    let got: Vec<Value> = frames.into_iter().map(|mut f| f.remove("lamp.color").unwrap_or(Value::Bool(false))).collect();
-    assert_eq!(got, vec![Value::Color(r.at(0.0)), Value::Color(r.at(0.5)), Value::Color(r.at(1.0))]);
+    let got: Vec<Value> = frames
+        .into_iter()
+        .map(|mut f| f.remove("lamp.color").unwrap_or(Value::Bool(false)))
+        .collect();
+    assert_eq!(
+        got,
+        vec![
+            Value::Color(r.at(0.0)),
+            Value::Color(r.at(0.5)),
+            Value::Color(r.at(1.0))
+        ]
+    );
 }
 
 #[test]
@@ -457,7 +477,13 @@ fn a_ramp_is_refused_for_a_number_and_a_bare_signal_for_a_colour() {
     )
     .unwrap_or_else(|e| unreachable!("{e}"));
     let on_number = clip.map_ramp("n", ramp(&["#000", "#fff"]), constant(0.5), 0.0);
-    assert!(matches!(&on_number, Err(Error::Invalid { message }) if message.contains("`n`") && message.contains("number")), "{on_number:?}");
+    assert!(
+        matches!(&on_number, Err(Error::Invalid { message }) if message.contains("`n`") && message.contains("number")),
+        "{on_number:?}"
+    );
     let bare = clip.map("lamp.color", constant(0.5), 0.0);
-    assert!(matches!(&bare, Err(Error::Invalid { message }) if message.contains("`lamp.color`") && message.contains("Ramp")), "{bare:?}");
+    assert!(
+        matches!(&bare, Err(Error::Invalid { message }) if message.contains("`lamp.color`") && message.contains("Ramp")),
+        "{bare:?}"
+    );
 }

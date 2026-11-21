@@ -21,6 +21,7 @@ from .adapters.audio import AudioMusic, AudioSound
 from .adapters.scene_compose import SceneCompose
 from .errors import BullterrierVideoError, InvalidError
 from .music import Music
+from .ramp import Ramp
 from .transitions import Cut, Dissolve, Sweep
 
 if TYPE_CHECKING:
@@ -114,12 +115,16 @@ class Clip:
         """Drives `address` (a string or `Addressed` handle) with `signal`, `lag` late.
 
         `signal` is anything with `sample(times)`, or a plain function from an array of seconds to an array of values.
+        A colour address takes a `Ramp(stop, stop, ..., signal)` instead; a ramp is refused for any other address.
 
         The value is held to the parameter's described range: a cyclic one wraps, a whole-number one rounds, a bool
-        is on from one half; a pixel value is never scaled. A text, colour, choice or picture is `set`, not mapped. The
+        is on from one half; a pixel value is never scaled. A text, choice or picture is `set`, not mapped. The
         address is refused, with the nearest names, when the picture lacks it or it is mapped or set already.
         """
-        self._native.map(self._name, _address(address), _signal(signal), lag)
+        if isinstance(signal, Ramp):
+            self._native.map_ramp(self._name, _address(address), list(signal.stops), _signal(signal.signal), lag)
+        else:
+            self._native.map(self._name, _address(address), _signal(signal), lag)
         return self
 
     def set(self, values: Mapping[_Key, object]) -> Clip:
