@@ -6,12 +6,11 @@ music clip from footage, a loop, a template run for many posts. A hand-written d
 frame, clamps by hand, adds one shake to twelve layers and needs a shell script for the soundtrack and ffmpeg; the mill here is 23
 lines of choreography.
 
-The examples show the whole designed surface, including what is still planned; the built part is `examples/mill.py`'s calls.
+The examples show the designed surface; the built part is `examples/mill.py`'s calls.
 
 **What is built:** the ports and video's own types; the core (profile, spans, a song in piece time, clips with their mappings, the
 piece and its parallel frame loop, contact sheets, the camera and transitions, the ffmpeg adapter); the Python package (`Piece`, `Clip`, `Ramp`, `Profile`, spans, `Music`,
-`Levels`, `render_all`, `Cut`, `Dissolve`, `Sweep`, the audio and scene compose adapters), the mill piece and its variants on it. **Planned, not in the signatures yet:** `track`,
-`fill`, `Footage` (marked *planned* below); each arrives with the batch that needs it.
+`Levels`, `render_all`, `Cut`, `Dissolve`, `Sweep`, the audio and scene compose adapters), the mill piece and its variants on it.
 
 ## Principles
 
@@ -42,7 +41,7 @@ piece.render("mill.mp4")
 |---|---|
 | `Piece(profile, *, loop=False)` | an empty piece; `duration` is the soundtrack's span (or the clips' end). `loop=True` makes the clock a circle: `render` is refused (`InvalidError`), before any frame is drawn, for a clip that does not cover 0 s to `duration` (a black stretch would show at the seam), more than one clip (so no transition), a song fade above zero, or a mapping or camera signal whose value at 0 s differs from its value at `duration` by more than 1e-6 of the address's unit; the error names the clip, the address and both values. A cyclic address closes at its wrap (360 is 0). A looped piece's duration is cut down to a whole number of frames, song included. Use a span of whole bars (`bars(n)`) so the sound closes too. `copy` and `draft` keep `loop` |
 | `Piece[name] -> Clip` | the clip of that name, to `set`, `map` or `swap` it |
-| `Piece.clip(name, source, start=0.0, end=None) -> Clip` | puts a picture on the timeline (a cut from one clip to the next; overlap is refused); `source` is a scene or anything with the Picture port's methods. *Planned:* `track=`, a `Footage` source, `fill=` |
+| `Piece.clip(name, source, start=0.0, end=None) -> Clip` | puts a picture on the timeline (a cut from one clip to the next; overlap is refused); `source` is a scene or anything with the Picture port's methods. |
 | `Piece.song(sound, span, *, fade_in=0.0, fade_out=0.0) -> Music` | cuts the sound to `span`, fades it, puts it under the piece, returns what it knows in the piece's own time; once: a second call is an `InvalidError` (a timing variant builds the piece again) |
 | `Piece.transition(a, b, at, length, kind=Cut())` | from clip `a` to clip `b` (clips or names), centred on `at`, `length` seconds long; both clips are drawn during the window. `Cut`: the first until the middle, then the second, nothing blended (no compose call). `Dissolve`: the second fades in over the first. `Sweep(kind="light", angle=0, feather=0.15)`: a soft edge (`feather` a fraction of the long side) crosses the frame at `angle` degrees clockwise (0 left to right, 90 downwards) and shows the second clip behind it; `"light"` rides a white bar on the edge under screen blend, `"dark"` a black one. Clips need only touch (a window draws both); they may overlap only inside a transition that covers the overlap (refused otherwise, naming the call to make); two transitions do not overlap each other. Not in v1 (piece-level looks): an exposure lift and bloom under the bar, a ragged edge |
 | `Piece.camera(dx=None, dy=None, zoom=None, rotate=None)` | one move over the finished frame; each a signal (anything `Clip.map` takes; `None` is at rest): `dx`, `dy` fractions of the long side, `zoom` one for none (above zero), `rotate` degrees clockwise about the centre; shake is a sum of signals. The compose adapter places each layer of the frame once, so no clip is drawn again and scene's cache holds; a frame whose view is at rest is not composed. A second call replaces the camera |
@@ -71,9 +70,6 @@ closes on the beat; an unknown meter raises), `whole()`, `between(start, end)`, 
 **Profile:** `Profile.vertical(width, fps)` (9:16, safe area 12 to 80 percent of the height), `.landscape`, `.square`; fields
 `width`, `height`, `fps`, `depth` (8 or 10 bit; delivery: 8-bit h264 is written as High profile and plays everywhere, `depth=10` plays on few phones, so use it for grading or archive, not for sending), `codec` (`h264` or `hevc`), `loudness` (LUFS, none by default), `safe`; the sides must be even. The scene's own `fit` and
 `cover` make the crop; video never crops afterward.
-
-**Footage** (*planned*): `Footage(path, start=0.0)`: a source of frames from `start` seconds into the file, handed to a scene
-through a picture hole. Waits for the decode port.
 
 ### Mapping
 
@@ -135,7 +131,7 @@ name no sibling's type.
 | Signal | `sample(times)` returning an array |
 | Music and Sound | a `bullterrier_audio.Sound` (measures and edits are one object in audio; two ports in video, so a replacement may supply either). `bullterrier_video.adapters.audio` wraps it as the plain-data objects the core calls (`beats()`, `hits("kick")`, `band("bass", start, end)`, `cut`, `fade`, `normalised`, `samples()` interleaved); it is the one file that names the audio library |
 
-**Camera and transitions go through `Compose`** (tracks will). Video draws each clip with the Picture port, then stacks the frames:
+**Camera and transitions go through `Compose`.** Video draws each clip with the Picture port, then stacks the frames:
 a transition is the outgoing frame and the incoming frame with a **mask video generates** (a soft edge at an angle, moved by the
 transition's progress), and for a sweep a bar on the edge (white under `Screen`, or black) with the edge's own mask; the camera is
 a `View` on every layer of that stack. Video makes the masks (arithmetic on its own `Frame`); scene does the blend and the
@@ -168,4 +164,4 @@ The Python package imports no sibling at import time; `bullterrier_audio` is imp
 ## Not in the first release
 
 Saved pieces (JSON): a piece holds Python objects, so it is built by a program, not loaded; a data form can come per port
-when a sibling's own data form is lossless. Also later: a live camera, tracking, multi-frame effects, mixing several sounds.
+when a sibling's own data form is lossless.
