@@ -1,7 +1,7 @@
 """Stills cut one into the next with sweeping transitions, under a slow camera push.
 
-A transition draws both clips for its window, then the frame is put together by the compose adapter (scene). The camera moves that finished frame, so no clip is drawn again and scene's cache holds. Footage and a second
-track for a title come with the decode port; the rest of the piece is built.
+A transition draws both clips for its window, then the frame is put together by the compose adapter (scene). The camera moves that finished frame, so no clip is drawn again and scene's cache holds. The clips are
+stills on one track: video does not decode footage.
 """
 
 import bullterrier_scene as bts

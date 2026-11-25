@@ -2,7 +2,7 @@
 
 Video decides what happens when, what drives what, and renders it. **The code API is the product**; it is designed from the
 programs in [examples/](examples/): a mill video, the same piece in several styles, a growing-letter poster, a
-music clip from footage, a loop, a template run for many posts. A hand-written driver for such a piece types about 50 addresses a
+montage of stills, a loop, a template run for many posts. A hand-written driver for such a piece types about 50 addresses a
 frame, clamps by hand, adds one shake to twelve layers and needs a shell script for the soundtrack and ffmpeg; the mill here is 23
 lines of choreography.
 
@@ -43,7 +43,7 @@ piece.render("mill.mp4")
 | `Piece[name] -> Clip` | the clip of that name, to `set`, `map` or `swap` it |
 | `Piece.clip(name, source, start=0.0, end=None) -> Clip` | puts a picture on the timeline (a cut from one clip to the next; overlap is refused); `source` is a scene or anything with the Picture port's methods. |
 | `Piece.song(sound, span, *, fade_in=0.0, fade_out=0.0) -> Music` | cuts the sound to `span`, fades it, puts it under the piece, returns what it knows in the piece's own time; once: a second call is an `InvalidError` (a timing variant builds the piece again) |
-| `Piece.transition(a, b, at, length, kind=Cut())` | from clip `a` to clip `b` (clips or names), centred on `at`, `length` seconds long; both clips are drawn during the window. `Cut`: the first until the middle, then the second, nothing blended (no compose call). `Dissolve`: the second fades in over the first. `Sweep(kind="light", angle=0, feather=0.15)`: a soft edge (`feather` a fraction of the long side) crosses the frame at `angle` degrees clockwise (0 left to right, 90 downwards) and shows the second clip behind it; `"light"` rides a white bar on the edge under screen blend, `"dark"` a black one. Clips need only touch (a window draws both); they may overlap only inside a transition that covers the overlap (refused otherwise, naming the call to make); two transitions do not overlap each other. Not in v1 (piece-level looks): an exposure lift and bloom under the bar, a ragged edge |
+| `Piece.transition(a, b, at, length, kind=Cut())` | from clip `a` to clip `b` (clips or names), centred on `at`, `length` seconds long; both clips are drawn during the window. `Cut`: the first until the middle, then the second, nothing blended (no compose call). `Dissolve`: the second fades in over the first. `Sweep(kind="light", angle=0, feather=0.15)`: a soft edge (`feather` a fraction of the long side) crosses the frame at `angle` degrees clockwise (0 left to right, 90 downwards) and shows the second clip behind it; `"light"` rides a white bar on the edge under screen blend, `"dark"` a black one. Clips need only touch (a window draws both); they may overlap only inside a transition that covers the overlap (refused otherwise, naming the call to make); two transitions do not overlap each other. The edge is straight, and the bar has no exposure lift or bloom under it (those are piece-level looks) |
 | `Piece.camera(dx=None, dy=None, zoom=None, rotate=None)` | one move over the finished frame; each a signal (anything `Clip.map` takes; `None` is at rest): `dx`, `dy` fractions of the long side, `zoom` one for none (above zero), `rotate` degrees clockwise about the centre; shake is a sum of signals. The compose adapter places each layer of the frame once, so no clip is drawn again and scene's cache holds; a frame whose view is at rest is not composed. A second call replaces the camera |
 | `Piece.render(path, *, workers=None)` | the file (mp4, mov, gif or png by its extension) through ffmpeg; frames drawn on `workers` threads (`DEFAULT_WORKERS`) and handed over in order, so the file does not depend on the number; written under a temporary name and renamed when ffmpeg succeeded; a frame equal to the one before it (same clips, values and camera) is not drawn again, so a held pose or a still costs one drawing; returns `RenderStats(frames, drawn, composed)` (counts only: `composed` is the drawn frames put together by the compose adapter) |
 | `Piece.draft(scale=0.5, *, fps=None)` | the same piece smaller (each side `scale` times, to the nearest even number) and, with `fps`, slower: pictures draw at any size, so a draft costs about `scale` squared of a render (the mill, 38 s: half size 7.8 s, half size at 15 fps 4.5 s, quarter size at 15 fps 1.7 s); the piece itself is unchanged |
@@ -95,9 +95,8 @@ every frame of the clip.
 
 ## Soundtrack
 
-One song per piece for now: cut to the span, faded, set to the profile's loudness if it has one, muxed in step with the frames (the
-sound is padded with silence to the picture and both end together). Mixing several sounds (voice-over, ducking, crossfades) is video's work through the Sound
-port and comes after the first pieces.
+One song per piece: cut to the span, faded, set to the profile's loudness if it has one, muxed in step with the frames (the
+sound is padded with silence to the picture and both end together). Video does not mix several sounds (voice-over, ducking, crossfades).
 
 ## Errors
 
@@ -120,8 +119,6 @@ name no sibling's type.
 | `Music` | duration, beats, downbeats, drops, hits, sections, `band`: times in seconds and levels; an unknown measure is an error, never an empty list | audio | slice 1 |
 | `Sound` | rate, channels, duration, `cut`, `fade`, `samples`: one sound edited at a time | audio | slice 1 |
 | `Encode` | `encode(job, frames)`: a stream of frames and the soundtrack into one file, at a rate, codec and bit depth | ffmpeg, as a separate program | slice 1 |
-| Decode (sketch) | frames of a clip at times, with its audio | ffmpeg | footage |
-| Footage maps (sketch) | a matte and a depth map per frame, steady over time | models | footage analysis |
 
 **What a Python object must have to be an adapter's input** (an adapter refuses a missing method by name):
 
@@ -161,7 +158,7 @@ the ffmpeg adapter is a module in it (it adds nothing to link). Adapters for pur
 Picture) are separate crates, so only they need image's and vector's pins, which scene fixes, so video never builds a second copy.
 The Python package imports no sibling at import time; `bullterrier_audio` is imported when a song is put under a piece.
 
-## Not in the first release
+## Saved pieces
 
 Saved pieces (JSON): a piece holds Python objects, so it is built by a program, not loaded; a data form can come per port
 when a sibling's own data form is lossless.
